@@ -166,6 +166,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .note-close:focus-visible { outline: 3px solid var(--mustard); outline-offset: 2px; }
 
+/* Mode "terukir": teks ada di model 3D, jadi hanya tombol tutup yang melayang di atas kanvas */
+.note.is-engraved { background: none; backdrop-filter: none; pointer-events: none; place-items: start end; padding: 64px 16px 0; }
+.note.is-engraved .note-paper {
+  width: auto; max-height: none; overflow: visible; padding: 0; background: none; box-shadow: none; transform: none;
+  pointer-events: none;
+}
+.note.is-engraved .note-paper > :not(.note-close) { display: none; }
+.note.is-engraved .note-close {
+  position: static; pointer-events: auto; cursor: pointer;
+  width: 48px; height: 48px; font-size: 20px;
+  background: rgba(27, 19, 14, .82); color: var(--paper);
+  border: 1px solid rgba(246, 239, 226, .35); box-shadow: 0 6px 18px rgba(0, 0, 0, .4);
+}
+
 .error {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
   z-index: 70; max-width: 90vw; text-align: center;

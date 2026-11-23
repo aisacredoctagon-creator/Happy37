@@ -24,7 +24,7 @@ export const CONFIG = {
     date: '19 NOV 2026',
     from: 'Jakarta',
     to: 'Surabaya',
-    train: 'KA Gasing Ekspres',
+    train: 'InterCity 225',
     seat: 'EKS-1 / 9A',
   },
 
@@ -43,10 +43,10 @@ export const CONFIG = {
     4: 'Di dalam toko antik… ada koper tua di etalase. Ketuk kopernya.',
     5: 'Kopernya terkunci. Ketuk bagian atas / bawah roda angka untuk mengubah kode.',
     6: 'Terbuka! Ada 9 bagian kereta dan cetakannya. Ketuk salah satu bagian.',
-    7: 'Ada tulisan kecil di bagian ini…',
-    8: 'Tutup catatan (✕) untuk memasang bagian ini ke cetakan.',
+    7: 'Ada tanda merah kecil di bagian ini… ada tulisan terukir di sana. Zoom sedekat-dekatnya!',
+    8: 'Tulisannya terukir di logam. Setelah selesai membaca, tutup (✕) untuk memasang bagian ini ke cetakan.',
     9: 'Keretanya jadi! Geser / drag untuk memutarnya 360°.',
-    10: 'Kalau sudah puas, tutup kopernya.',
+    10: 'Arahkan kursor ke bagian kereta, lalu ketuk untuk membaca suratnya. Kalau sudah puas, tutup kopernya.',
     // transisi 10 → 11 (kamera mundur dari koper, Gasing datang membawa tas tenisnya)
     t11: 'Kopernya kembali tertutup. Gasing datang menenteng tas tenisnya…',
     11: 'Eh… bola tenis di tas Gasing jatuh dan menggelinding!',
@@ -86,6 +86,7 @@ export const CONFIG = {
     s4_koper: 'assets/scene4/koper.png',
 
     s5_bg3d: 'assets/scene5/bg-3d.jpg', // background scene 3D (opsional)
+    train_logo: 'assets/train/virgin-logo.png', // logo di sisi lokomotif (PNG transparan; diubah jadi putih di kode)
 
     s11_bg: 'assets/scene11/bg-toko-antik.jpg',
 

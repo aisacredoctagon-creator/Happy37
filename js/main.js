@@ -81,7 +81,9 @@ function fade(to, color = 'black', duration = 0.45) {
 }
 
 let cancelNote = null;
-function openNote(part) {
+// engraved: tulisan sudah terukir di model 3D (ultra zoom-in) → kertas catatan HTML disembunyikan, hanya tombol ✕ yang tampil
+function openNote(part, { engraved = false } = {}) {
+  el.note.classList.toggle('is-engraved', engraved);
   el.noteTitle.textContent = part.name;
   el.noteBody.replaceChildren(...part.text.map((s) => h('p', {}, s)));
   el.note.hidden = false;
