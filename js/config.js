@@ -1,0 +1,96 @@
+// ============================================================
+//  KONFIGURASI CERITA
+//  Semua teks, kode koper, dan path aset ada di sini.
+//  Aset 2D otomatis dicari di path yang tertulis; kalau file
+//  belum ada, website menampilkan placeholder berlabel.
+// ============================================================
+
+const LOREM = [
+  'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+  'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+  'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.',
+  'Nisi ut aliquip ex ea commodo consequat duis aute irure dolor.',
+  'In reprehenderit in voluptate velit esse cillum dolore eu fugiat.',
+  'Nulla pariatur excepteur sint occaecat cupidatat non proident.',
+  'Sunt in culpa qui officia deserunt mollit anim id est laborum.',
+  'Curabitur pretium tincidunt lacus, nulla gravida orci a odio.',
+];
+
+export const CONFIG = {
+  recipient: 'Pa Bram',
+
+  ticket: {
+    name: 'Pa Bram',
+    date: '19 NOV 2026',
+    from: 'Jakarta',
+    to: 'Surabaya',
+    train: 'KA Gasing Ekspres',
+    seat: 'EKS-1 / 9A',
+  },
+
+  // Kode gembok koper (Scene 5)
+  lockCode: [1, 2, 3, 4],
+
+  // Minimal derajat putaran kereta sebelum tombol "Tutup" muncul (Scene 10)
+  rotateThresholdDeg: 300,
+
+  // Narasi per scene
+  captions: {
+    1: 'Sebuah tiket kereta menuju Surabaya. Ketuk tiketnya untuk berangkat!',
+    2: 'Dari jendela kereta, landmark Surabaya mulai terlihat…',
+    3: 'Sampai di Surabaya! Waktunya makan soto Ambengan dulu. Ketuk gerobaknya.',
+    s3_kenyang: 'Kenyang! Sekarang mampir ke toko antik di seberang. Ketuk tokonya.',
+    4: 'Di dalam toko antik… ada koper tua di etalase. Ketuk kopernya.',
+    5: 'Kopernya terkunci. Ketuk bagian atas / bawah roda angka untuk mengubah kode.',
+    6: 'Terbuka! Ada 9 bagian kereta dan cetakannya. Ketuk salah satu bagian.',
+    7: 'Ada tulisan kecil di bagian ini…',
+    8: 'Tutup catatan (✕) untuk memasang bagian ini ke cetakan.',
+    9: 'Keretanya jadi! Geser / drag untuk memutarnya 360°.',
+    10: 'Kalau sudah puas, tutup kopernya.',
+    // transisi 10 → 11 (kamera mundur dari koper, Gasing datang membawa tas tenisnya)
+    t11: 'Kopernya kembali tertutup. Gasing datang menenteng tas tenisnya…',
+    11: 'Eh… bola tenis di tas Gasing jatuh dan menggelinding!',
+    12: 'Bolanya berhenti di dekat TV tua…',
+  },
+
+  // 9 bagian kereta (Scene 6–8). `text` = 8 kalimat yang muncul saat di-zoom.
+  parts: [
+    { id: 'loco-roof',   name: 'Atap Lokomotif',   text: LOREM },
+    { id: 'car1-roof',   name: 'Atap Gerbong 1',   text: LOREM },
+    { id: 'car2-roof',   name: 'Atap Gerbong 2',   text: LOREM },
+    { id: 'loco-body',   name: 'Badan Lokomotif',  text: LOREM },
+    { id: 'car1-body',   name: 'Badan Gerbong 1',  text: LOREM },
+    { id: 'car2-body',   name: 'Badan Gerbong 2',  text: LOREM },
+    { id: 'loco-wheels', name: 'Roda Lokomotif',   text: LOREM },
+    { id: 'car1-wheels', name: 'Roda Gerbong 1',   text: LOREM },
+    { id: 'car2-wheels', name: 'Roda Gerbong 2',   text: LOREM },
+  ],
+
+  // Path aset. Ganti file di folder /assets dengan nama yang sama
+  // (atau ubah path di sini). Yang belum ada → placeholder.
+  assets: {
+    gasing: 'assets/characters/gasing.png',
+
+    s1_bg: 'assets/scene1/bg-stasiun.jpg',
+
+    s2_view: 'assets/scene2/view-landmark-surabaya.jpg',
+    s2_window: 'assets/scene2/jendela-kereta.png',
+
+    s3_bg: 'assets/scene3/bg-jalan-surabaya.jpg',
+    s3_gerobak: 'assets/scene3/gerobak-soto-ambengan.png',
+    s3_toko: 'assets/scene3/toko-antik-luar.png',
+    s3_tas: 'assets/scene3/tas-raket-tenis.png',
+
+    s4_bg: 'assets/scene4/bg-toko-antik.jpg',
+    s4_etalase: 'assets/scene4/etalase.png',
+    s4_koper: 'assets/scene4/koper.png',
+
+    s5_bg3d: 'assets/scene5/bg-3d.jpg', // background scene 3D (opsional)
+
+    s11_bg: 'assets/scene11/bg-toko-antik.jpg',
+
+    s12_video: 'assets/scene12/video-ulang-tahun.mp4',
+
+    bgm: 'assets/audio/bgm.mp3',
+  },
+};

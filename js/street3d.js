@@ -1,0 +1,1124 @@
+// ============================================================
+//  SCENE 3 (3D) — JALAN DI SURABAYA — Three.js
+//  Jalan kota sore hari: deretan ruko kolonial, spanduk "Selamat Datang di
+//  SURABAYA", gerobak soto Ambengan (uap mengepul) dan toko antik dengan pintu
+//  terbuka yang bercahaya. Sama seperti toko di scene 4, Gasing adalah elemen DOM
+//  (gasing3d.js) yang posisi + ukurannya diproyeksikan dari titik di trotoar 3D,
+//  jadi ia benar-benar berjalan di jalan itu. Tas tenis dijinjing di sarung tangan
+//  kirinya (bag: true) dan menjadi bagian dari elemen yang sama.
+//
+//  Alur: Gasing datang → ketuk gerobak (makan soto) → ketuk toko antik →
+//  Gasing berjalan ke pintu, memudar ke dalam cahaya → onDone() → scene 4.
+//
+//  Dipakai oleh world3d.js (renderer dipakai bersama toko & koper).
+// ============================================================
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { gsap } from 'gsap';
+import { createGasing3D } from './gasing3d.js';
+import { CONFIG } from './config.js';
+import { rng, std, box, put, mesh, canvasTex, markerTexture, dotTexture } from './shop3d.js';
+
+const DEG = Math.PI / 180;
+const WALL_Z = -3.6;                       // muka bangunan
+const CURB_Z = 3.4;                        // tepi trotoar
+const CART = new THREE.Vector3(-0.6, 0, 0.3);
+const SHOP = { x: 4.9, w: 5.4, h: 5.2, d: 4.5 };
+const DOOR = new THREE.Vector3(SHOP.x, 0.06, WALL_Z + 0.95);   // berdiri di teras
+const PORCH_H = 0.06;
+
+// Gasing (elemen DOM) berjalan di trotoar
+const ACTOR_H = 1.55, ACTOR_FOOT = 0.1;
+const START = { x: -9.8, z: 2.7 };
+const STAND = { x: -3.5, z: 1.95 };        // menunggu di sini sebelum gerobak diketuk
+const EAT_AT = { x: -2.1, z: 1.5 };        // berdiri di depan gerobak saat makan
+
+const VIEWS = {
+  //        target (t)           arah kamera (dir)    lebar/tinggi yang harus muat; p = variasi layar portrait
+  // po = seberapa jauh titik pandang diturunkan (pecahan h) supaya objek naik di layar & caption di bawah tidak menutupi
+  intro: { t: [0.8, 2.4, -1.0], dir: [-0.38, 0.42, 1], w: 19, h: 8.4, p: { t: [-2.0, 2.2, -0.5], w: 9.5, h: 7.5, po: 0.04 } },
+  wide: { t: [1.2, 2.3, -0.8], dir: [-0.14, 0.1, 1], w: 15.5, h: 7.4, p: { t: [-1.7, 2.5, 0.2], w: 6.6, h: 6.0, po: 0.02 } },
+  cart: { t: [-1.5, 1.3, 0.7], dir: [-0.1, 0.09, 1], w: 6.4, h: 3.6, p: { t: [-1.4, 1.7, 0.7], w: 4.8, h: 4.2, po: 0.02 } },
+  after: { t: [1.9, 2.4, -0.8], dir: [-0.1, 0.1, 1], w: 14.2, h: 7.2, p: { t: [3.4, 2.5, -0.6], w: 7.4, h: 6.4, po: 0.02 } },
+  shop: { t: [SHOP.x, 2.3, -2.6], dir: [-0.06, 0.08, 1], w: 7.4, h: 5.6, p: { w: 6.2, h: 5.6, po: 0.02 } },
+  door: { t: [SHOP.x, 1.5, -3.0], dir: [0, 0.05, 1], w: 3.6, h: 2.7, p: { w: 3.4, h: 3.2, po: 0.02 } },
+};
+
+const sleepRaw = (s) => new Promise((r) => setTimeout(r, s * 1000));
+
+/* ============================================================
+   Tekstur kanvas
+============================================================ */
+function fitFont(g, text, weight, family, maxW, size) {
+  do { g.font = `${weight} ${size}px ${family}`; size -= 4; } while (g.measureText(text).width > maxW && size > 20);
+}
+const DISPLAY = 'Fredoka, "Arial Rounded MT Bold", "Trebuchet MS", sans-serif';
+const BODY = 'Nunito, "Trebuchet MS", sans-serif';
+
+function skyTexture() {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 512;
+  const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 512);
+  gr.addColorStop(0, '#3f93d2'); gr.addColorStop(0.38, '#86c4ea'); gr.addColorStop(0.62, '#cfe3e6'); gr.addColorStop(0.8, '#f7e3b8'); gr.addColorStop(1, '#f6d8a4');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 512);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function cloudTexture(seed) {
+  const r = rng(seed);
+  return canvasTex(256, 128, (g) => {
+    for (let i = 0; i < 16; i++) {
+      const x = 40 + r() * 176, y = 64 + (r() - 0.5) * 34, rad = 22 + r() * 30;
+      const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(0.6, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 256, 128);
+    }
+  });
+}
+
+function pavingTexture() {
+  const r = rng(11);
+  return canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#cbbda2'; g.fillRect(0, 0, w, h);
+    const n = 4, s = w / n;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const v = 190 + Math.floor(r() * 26);
+      g.fillStyle = `rgb(${v + 10},${v},${v - 20})`;
+      g.fillRect(x * s + 3, y * s + 3, s - 6, s - 6);
+    }
+    for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(60,45,25,${r() * 0.06})`; g.fillRect(r() * w, r() * h, 2 + r() * 5, 2 + r() * 5); }
+  }, { repeat: [34, 4] });
+}
+
+function asphaltTexture() {
+  const r = rng(5);
+  return canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#4c4b4d'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 2400; i++) { const v = 50 + Math.floor(r() * 50); g.fillStyle = `rgba(${v},${v},${v},.5)`; g.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2); }
+  }, { repeat: [16, 5] });
+}
+
+function dashTexture() {
+  return canvasTex(256, 32, (g, w, h) => {
+    g.fillStyle = '#f4efe0'; g.fillRect(8, 6, 150, h - 12);
+  }, { repeat: [30, 1] });
+}
+
+function stripeTexture(a, b, n = 8) {
+  return canvasTex(256, 64, (g, w, h) => {
+    const s = w / n;
+    for (let i = 0; i < n; i++) { g.fillStyle = i % 2 ? b : a; g.fillRect(i * s, 0, s + 1, h); }
+    const gr = g.createLinearGradient(0, 0, 0, h);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.18)');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  });
+}
+
+function drawWindow(g, x, y, w, h, { trim, glass, shutter, arch }) {
+  const sw = w * 0.5;
+  for (const sx of [-1, 1]) {                       // daun jendela terbuka di kiri-kanan
+    const lx = sx < 0 ? x - sw : x + w;
+    g.fillStyle = shutter; g.fillRect(lx, y, sw, h);
+    g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 1.5;
+    for (let ly = y + 5; ly < y + h - 3; ly += 7) { g.beginPath(); g.moveTo(lx + 3, ly); g.lineTo(lx + sw - 3, ly); g.stroke(); }
+    g.strokeStyle = 'rgba(0,0,0,.4)'; g.lineWidth = 2; g.strokeRect(lx + 1, y + 1, sw - 2, h - 2);
+  }
+  g.fillStyle = trim;
+  g.fillRect(x - 5, y - 5, w + 10, h + 12);
+  if (arch) { g.beginPath(); g.arc(x + w / 2, y - 3, w / 2 + 5, Math.PI, 0); g.fill(); }
+  const gr = g.createLinearGradient(x, y, x + w, y + h);
+  gr.addColorStop(0, glass); gr.addColorStop(0.45, '#7aa0b5'); gr.addColorStop(1, glass);
+  g.fillStyle = gr; g.fillRect(x, y, w, h);
+  if (arch) { g.beginPath(); g.arc(x + w / 2, y, w / 2, Math.PI, 0); g.fill(); }
+  g.strokeStyle = trim; g.lineWidth = 4;
+  g.beginPath(); g.moveTo(x + w / 2, y - (arch ? w / 2 : 0)); g.lineTo(x + w / 2, y + h); g.moveTo(x, y + h * 0.42); g.lineTo(x + w, y + h * 0.42); g.stroke();
+  g.fillStyle = 'rgba(255,255,255,.22)';
+  g.beginPath(); g.moveTo(x + 6, y + h - 6); g.lineTo(x + w * 0.45, y + 6); g.lineTo(x + w * 0.62, y + 6); g.lineTo(x + 22, y + h - 6); g.fill();
+  g.fillStyle = trim; g.fillRect(x - 9, y + h + 4, w + 18, 7);   // ambang
+}
+
+function facadeTexture({ w, h, floors = 2, cols = 3, color, trim, shutter, glass = '#2c3e4c', seed = 1, ground = 'shutter', arch = false }) {
+  const PX = 100;
+  return canvasTex(Math.round(w * PX), Math.round(h * PX), (g, cw, ch) => {
+    const r = rng(seed * 31 + 7);
+    g.fillStyle = color; g.fillRect(0, 0, cw, ch);
+    for (let i = 0; i < 260; i++) {                  // noda & lumut
+      g.fillStyle = r() < 0.55 ? `rgba(70,45,20,${0.02 + r() * 0.05})` : `rgba(255,255,255,${0.02 + r() * 0.04})`;
+      g.fillRect(r() * cw, r() * ch, 6 + r() * 36, 12 + r() * 70);
+    }
+    const fh = ch / floors;
+    for (let f = 1; f < floors; f++) {               // pita antar lantai
+      g.fillStyle = trim; g.fillRect(0, f * fh - 8, cw, 16);
+      g.fillStyle = 'rgba(0,0,0,.14)'; g.fillRect(0, f * fh + 8, cw, 4);
+    }
+    const colW = cw / cols;
+    for (let f = 0; f < floors - 1; f++) for (let c = 0; c < cols; c++) {
+      const ww = Math.min(colW * 0.4, 66), wh = fh * 0.56;
+      drawWindow(g, colW * (c + 0.5) - ww / 2, f * fh + fh * 0.2, ww, wh, { trim, glass, shutter, arch });
+    }
+    const gy = (floors - 1) * fh;                    // lantai dasar
+    for (let c = 0; c < cols; c++) {
+      const cx = colW * (c + 0.5);
+      if (ground === 'shutter' && c !== Math.floor(cols / 2)) {
+        const sw = colW * 0.8, sh = fh * 0.74, y0 = ch - sh - 4;
+        g.fillStyle = '#9ba1a6'; g.fillRect(cx - sw / 2, y0, sw, sh);
+        g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 2;
+        for (let y = y0 + 6; y < y0 + sh; y += 7) { g.beginPath(); g.moveTo(cx - sw / 2, y); g.lineTo(cx + sw / 2, y); g.stroke(); }
+        g.strokeStyle = trim; g.lineWidth = 6; g.strokeRect(cx - sw / 2 - 3, y0 - 3, sw + 6, sh + 6);
+      } else if (c === Math.floor(cols / 2)) {
+        const dw = Math.min(colW * 0.58, 70), dh = fh * 0.72, y0 = ch - dh - 4;
+        g.fillStyle = trim; g.fillRect(cx - dw / 2 - 6, y0 - 6, dw + 12, dh + 6);
+        const dg = g.createLinearGradient(0, y0, 0, y0 + dh);
+        dg.addColorStop(0, shutter); dg.addColorStop(1, 'rgba(0,0,0,.4)');
+        g.fillStyle = shutter; g.fillRect(cx - dw / 2, y0, dw, dh);
+        g.fillStyle = dg; g.fillRect(cx - dw / 2, y0, dw, dh);
+        g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; g.strokeRect(cx - dw / 2 + 6, y0 + 8, dw - 12, dh * 0.4);
+        g.strokeRect(cx - dw / 2 + 6, y0 + dh * 0.5, dw - 12, dh * 0.42);
+      } else {
+        drawWindow(g, cx - 34, gy + fh * 0.3, 68, fh * 0.46, { trim, glass, shutter, arch });
+      }
+    }
+    const gr = g.createLinearGradient(0, ch - 90, 0, ch);  // kotor di dasar dinding
+    gr.addColorStop(0, 'rgba(40,30,20,0)'); gr.addColorStop(1, 'rgba(40,30,20,.4)');
+    g.fillStyle = gr; g.fillRect(0, ch - 90, cw, 90);
+  });
+}
+
+function welcomeTexture() {
+  return canvasTex(2048, 420, (g, w, h) => {
+    g.fillStyle = '#f7efdc'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#c1272d'; g.fillRect(0, 0, w, 26); g.fillRect(0, h - 26, w, 26);
+    g.strokeStyle = '#c1272d'; g.lineWidth = 6; g.strokeRect(46, 52, w - 92, h - 104);
+    g.fillStyle = '#7b1a1e'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    fitFont(g, 'Selamat Datang di', 600, DISPLAY, 1300, 92);
+    g.fillText('Selamat Datang di', w / 2, 120);
+    g.fillStyle = '#c1272d';
+    fitFont(g, 'SURABAYA', 700, DISPLAY, 1250, 230);
+    g.fillText('SURABAYA', w / 2, 262);
+    g.font = '100px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+    g.fillText('🦈', 170, h / 2); g.fillText('🐊', w - 170, h / 2);
+  });
+}
+
+function shopSignTexture() {
+  return canvasTex(1024, 256, (g, w, h) => {
+    g.fillStyle = '#1f3a2c'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#d4b062'; g.lineWidth = 8; g.strokeRect(14, 14, w - 28, h - 28);
+    g.lineWidth = 2; g.strokeRect(28, 28, w - 56, h - 56);
+    g.fillStyle = '#e6c474'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 118px Georgia, serif'; g.fillText('TOKO ANTIK', w / 2, h / 2 - 14);
+    g.font = 'italic 32px Georgia, serif'; g.fillText('~ sejak 1926 ~', w / 2, h - 50);
+  });
+}
+
+function cartSignTexture() {
+  return canvasTex(1024, 280, (g, w, h) => {
+    g.fillStyle = '#b8321f'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#f6e7c1'; g.lineWidth = 10; g.strokeRect(14, 14, w - 28, h - 28);
+    g.fillStyle = '#fff3d0'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    fitFont(g, 'SOTO AMBENGAN', 700, DISPLAY, 860, 128);
+    g.fillText('SOTO AMBENGAN', w / 2, h / 2 - 16);
+    g.font = `600 40px ${BODY}`; g.fillText('~ khas Surabaya ~', w / 2, h - 52);
+  });
+}
+
+function lampBoardTexture() {      // papan kecil "BUKA"
+  return canvasTex(256, 128, (g, w, h) => {
+    g.fillStyle = '#f2e4c2'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#8a6a2b'; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
+    g.fillStyle = '#3b2a1a'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 64px Georgia, serif'; g.fillText('BUKA', w / 2, h / 2 + 2);
+  });
+}
+
+function interiorTexture() {      // bagian dalam toko yang terlihat lewat pintu terbuka
+  const r = rng(77);
+  return canvasTex(256, 512, (g, w, h) => {
+    const gr = g.createRadialGradient(w / 2, h * 0.55, 10, w / 2, h * 0.55, h * 0.7);
+    gr.addColorStop(0, '#ffe6b0'); gr.addColorStop(0.5, '#e8a85a'); gr.addColorStop(1, '#6a3a16');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(60,30,10,.55)';
+    for (const y of [150, 270, 390]) g.fillRect(0, y, w, 8);        // rak
+    for (let row = 0; row < 3; row++) for (let i = 0; i < 6; i++) {
+      const x = 14 + i * 40 + r() * 10, bh = 26 + r() * 44, bw = 14 + r() * 14;
+      g.beginPath(); g.ellipse(x, 150 + row * 120 - bh / 2, bw / 2, bh / 2, 0, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = 'rgba(40,20,5,.7)'; g.beginPath(); g.arc(w / 2, 70, 26, 0, Math.PI * 2); g.fill();   // lampu gantung
+    g.fillRect(w / 2 - 1.5, 0, 3, 50);
+  });
+}
+
+function displayWindowTexture(seed) {
+  const r = rng(seed);
+  return canvasTex(256, 300, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h);
+    gr.addColorStop(0, '#f3d08c'); gr.addColorStop(1, '#a86a2e');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(70,35,10,.8)'; g.fillRect(0, h * 0.72, w, 10);
+    g.fillStyle = 'rgba(50,25,8,.82)';
+    for (let i = 0; i < 4; i++) {                   // siluet barang antik
+      const x = 38 + i * 58 + r() * 12, kind = Math.floor(r() * 3);
+      if (kind === 0) { g.beginPath(); g.ellipse(x, h * 0.72 - 36, 20, 34, 0, 0, Math.PI * 2); g.fill(); g.fillRect(x - 8, h * 0.72 - 84, 16, 22); }
+      else if (kind === 1) { g.beginPath(); g.arc(x, h * 0.72 - 32, 26, 0, Math.PI * 2); g.fill(); g.fillRect(x - 14, h * 0.72 - 6, 28, 6); }
+      else { g.beginPath(); g.moveTo(x - 24, h * 0.72); g.lineTo(x + 24, h * 0.72); g.lineTo(x + 8, h * 0.72 - 62); g.lineTo(x - 8, h * 0.72 - 62); g.fill(); }
+    }
+    g.fillStyle = 'rgba(255,255,255,.2)';
+    g.beginPath(); g.moveTo(0, h); g.lineTo(0, h * 0.3); g.lineTo(w * 0.5, 0); g.lineTo(w * 0.7, 0); g.lineTo(w * 0.2, h); g.fill();
+  });
+}
+
+function shopFacadeTexture(W, H) {
+  const PX = 100;
+  return canvasTex(Math.round(W * PX), Math.round(H * PX), (g, cw, ch) => {
+    const r = rng(19);
+    const wy = (y) => (H - y) * PX;                       // y dunia → y kanvas
+    g.fillStyle = '#2f4a3a'; g.fillRect(0, 0, cw, ch);
+    for (let i = 0; i < 280; i++) {
+      g.fillStyle = r() < 0.5 ? `rgba(0,0,0,${0.03 + r() * 0.07})` : `rgba(255,255,255,${0.02 + r() * 0.04})`;
+      g.fillRect(r() * cw, r() * ch, 6 + r() * 30, 12 + r() * 60);
+    }
+    // lantai dasar: panel kayu jati
+    g.fillStyle = '#4a2a17'; g.fillRect(0, wy(3.05), cw, wy(0) - wy(3.05));
+    g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 3;
+    for (let x = 12; x < cw; x += 54) { g.beginPath(); g.moveTo(x, wy(3.05)); g.lineTo(x, wy(0)); g.stroke(); }
+    g.fillStyle = '#b08a3a'; g.fillRect(0, wy(3.18), cw, 14);                 // pita emas
+    g.fillStyle = '#6a3520'; g.fillRect(0, wy(0.8), cw, 8);
+    // lantai atas: dua jendela lengkung dengan daun jendela cokelat
+    for (const cx of [W * 0.27, W * 0.73]) {
+      drawWindow(g, cx * PX - 38, wy(4.7), 76, 120, { trim: '#e8d6a8', glass: '#27343f', shutter: '#6a3520', arch: true });
+    }
+    g.fillStyle = '#e8d6a8'; g.beginPath(); g.arc(cw / 2, wy(4.2), 34, 0, Math.PI * 2); g.fill();   // jendela bulat
+    g.fillStyle = '#27343f'; g.beginPath(); g.arc(cw / 2, wy(4.2), 26, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#e8d6a8'; g.lineWidth = 3; g.beginPath(); g.moveTo(cw / 2 - 26, wy(4.2)); g.lineTo(cw / 2 + 26, wy(4.2)); g.moveTo(cw / 2, wy(4.2) - 26); g.lineTo(cw / 2, wy(4.2) + 26); g.stroke();
+    g.fillStyle = '#d4b062'; g.fillRect(0, wy(5.2) - 6, cw, 10);                 // gading atas
+  });
+}
+
+/* ============================================================
+   Model: bangunan, gerobak, pohon, tiang
+============================================================ */
+function buildHouse({ w, h, d = 5, floors = 2, cols = 3, color, trim, shutter, seed, balcony = false, awning = null, ac = false, arch = false }) {
+  const g = new THREE.Group();
+  const tex = facadeTexture({ w, h, floors, cols, color, trim, shutter, seed, arch });
+  const front = std(0xffffff, { map: tex, roughness: 0.92, envMapIntensity: 0.2 });
+  const side = std(new THREE.Color(color).multiplyScalar(0.78), { roughness: 0.95, envMapIntensity: 0.2 });
+  const trimM = std(trim, { roughness: 0.8, envMapIntensity: 0.2 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, side, side, front, side]);
+  body.position.set(0, h / 2, -d / 2);
+  body.castShadow = true; body.receiveShadow = true;
+  g.add(body);
+  put(g, box(w + 0.06, 0.34, 0.1, std(0x8d8070)), 0, 0.17, 0.03);                       // plint
+  put(g, box(w + 0.34, 0.22, 0.4, trimM), 0, h + 0.02, -0.04);                           // lisplang atas
+  put(g, box(w + 0.18, 0.1, 0.24, trimM), 0, h - 0.18, -0.02);
+
+  const rise = 1.0 + (seed % 3) * 0.15;                                                  // atap limas genteng
+  const roofGeo = new THREE.CylinderGeometry(0.16, 1, rise, 4, 1);
+  roofGeo.rotateY(Math.PI / 4);
+  const roof = new THREE.Mesh(roofGeo, std(0xa8532f, { roughness: 0.85, flatShading: true, envMapIntensity: 0.2 }));
+  roof.scale.set((w + 0.7) * 0.7071, 1, (d + 0.5) * 0.7071);
+  roof.position.set(0, h + 0.12 + rise / 2, -d / 2 - 0.05);
+  roof.castShadow = true;
+  g.add(roof);
+
+  const fh = h / floors;
+  if (balcony) {                                                                          // balkon lantai atas
+    const by = h - fh + 0.04;
+    put(g, box(w * 0.46, 0.09, 0.78, trimM), 0, by, 0.38);
+    put(g, box(w * 0.46, 0.06, 0.05, trimM), 0, by + 0.95, 0.74);
+    for (let i = 0; i < 9; i++) put(g, box(0.035, 0.9, 0.035, trimM, { cast: false }), -w * 0.21 + (i * w * 0.42) / 8, by + 0.5, 0.74);
+  }
+  if (awning) {                                                                           // kanopi toko lantai dasar
+    const a = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, 0.05, 1.05), std(0xffffff, { map: stripeTexture(awning[0], awning[1], 10), roughness: 0.9 }));
+    a.position.set(0, 2.55, 0.5); a.rotation.x = 0.16; a.castShadow = true; a.receiveShadow = true;
+    g.add(a);
+  }
+  if (ac) {                                                                               // AC kecil di dinding
+    put(g, box(0.62, 0.34, 0.3, std(0xe9e9e4, { roughness: 0.6 })), w * 0.3, h - fh * 0.42, 0.15);
+  }
+  return g;
+}
+
+function makeVase(h, color) {
+  const pts = [[0, 0], [0.22, 0], [0.3, 0.14], [0.34, 0.34], [0.26, 0.58], [0.15, 0.74], [0.17, 0.9], [0.24, 1.0], [0.0, 1.0]]
+    .map(([x, y]) => new THREE.Vector2(x * h * 0.5, y * h));
+  const v = mesh(new THREE.LatheGeometry(pts, 20), std(color, { roughness: 0.35, envMapIntensity: 0.8 }));
+  return v;
+}
+
+function buildWheel(r) {
+  const g = new THREE.Group();
+  const dark = std(0x2b2724, { roughness: 0.7 });
+  g.add(mesh(new THREE.TorusGeometry(r, 0.045, 8, 28), dark));
+  const hub = mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.1, 10), std(0xb9bec4, { metalness: 0.8, roughness: 0.3 }));
+  hub.rotation.x = Math.PI / 2;
+  g.add(hub);
+  for (let i = 0; i < 8; i++) {
+    const s = box(r * 2, 0.025, 0.025, std(0x8a5a33), { cast: false });
+    s.rotation.z = (i * Math.PI) / 8;
+    g.add(s);
+  }
+  return g;
+}
+
+function buildCart(anim, steamTex) {
+  const g = new THREE.Group();
+  const wood = std(0x8a5a33, { roughness: 0.7 });
+  const woodDark = std(0x4f2f1a, { roughness: 0.8 });
+  const steel = std(0xb9bec4, { metalness: 0.85, roughness: 0.28, envMapIntensity: 1 });
+  const glassM = new THREE.MeshStandardMaterial({ color: 0xd6ebe6, transparent: true, opacity: 0.16, roughness: 0.05, envMapIntensity: 1.2, depthWrite: false });
+
+  put(g, box(2.0, 0.62, 1.0, wood), 0, 0.98, 0);                                     // badan
+  put(g, box(2.06, 0.05, 1.06, woodDark), 0, 1.315, 0);                              // meja atas
+  put(g, box(1.84, 0.05, 0.9, woodDark), 0, 0.48, 0);                                // rak bawah
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.82, 0.5), new THREE.MeshStandardMaterial({ map: cartSignTexture(), roughness: 0.7 }));
+  sign.position.set(0, 0.98, 0.503);
+  g.add(sign);
+  for (const sx of [-0.92, 0.92]) for (const sz of [-0.44, 0.44]) put(g, box(0.07, 0.5, 0.07, woodDark), sx, 0.5, sz);   // kaki
+  // jerigen & panci di rak bawah
+  put(g, mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.34, 14), std(0xd9d6cc, { roughness: 0.5 })), -0.45, 0.67, 0.05);
+  put(g, mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.28, 14), std(0x3a6b8a, { roughness: 0.5 })), 0.35, 0.64, -0.05);
+
+  // roda besar (poros searah z), tuas dorong ke kanan, penopang di kiri
+  for (const sz of [-0.62, 0.62]) { const w = buildWheel(0.5); w.position.set(0.4, 0.5, sz); g.add(w); }
+  put(g, box(0.07, 0.07, 1.4, woodDark), 0.4, 0.5, 0);
+  for (const sz of [-0.34, 0.34]) { const hnd = put(g, box(1.25, 0.06, 0.07, woodDark), 1.55, 0.86, sz); hnd.rotation.z = -0.08; }
+
+  // etalase kaca (mangkuk soto, sate, emping, jeruk nipis)
+  const gx = -0.42;
+  put(g, mesh(new THREE.BoxGeometry(1.05, 0.62, 0.78), glassM, { cast: false }), gx, 1.66, 0.02);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(g, box(0.035, 0.62, 0.035, steel, { cast: false }), gx + sx * 0.51, 1.66, 0.02 + sz * 0.37);
+  put(g, box(1.07, 0.03, 0.8, steel, { cast: false }), gx, 1.98, 0.02);
+  const bowlM = std(0xf4f1e8, { roughness: 0.3 });
+  const soupM = std(0xc9892f, { roughness: 0.5 });
+  for (let i = 0; i < 6; i++) {
+    const bx = gx - 0.34 + (i % 3) * 0.34, bz = -0.12 + Math.floor(i / 3) * 0.3;
+    put(g, mesh(new THREE.CylinderGeometry(0.11, 0.07, 0.08, 14), bowlM), bx, 1.375, bz);
+    put(g, mesh(new THREE.CircleGeometry(0.095, 14), soupM), bx, 1.418, bz).rotation.x = -Math.PI / 2;
+  }
+  for (let i = 0; i < 3; i++) put(g, mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.012, 14), std(0xe4b45a, { roughness: 0.6 })), gx + 0.05 + i * 0.01, 1.62 + i * 0.012, 0.15);   // emping
+  put(g, mesh(new THREE.SphereGeometry(0.05, 10, 8), std(0x7bb83a)), gx + 0.32, 1.62, 0.12);                                // jeruk nipis
+  put(g, mesh(new THREE.SphereGeometry(0.05, 10, 8), std(0x7bb83a)), gx + 0.4, 1.62, 0.22);
+
+  // panci besar berkuah
+  const potX = 0.58;
+  put(g, mesh(new THREE.CylinderGeometry(0.3, 0.28, 0.42, 20), steel), potX, 1.55, 0.05);
+  put(g, mesh(new THREE.TorusGeometry(0.3, 0.025, 8, 20), steel), potX, 1.76, 0.05).rotation.x = Math.PI / 2;
+  put(g, mesh(new THREE.CircleGeometry(0.28, 20), soupM), potX, 1.745, 0.05).rotation.x = -Math.PI / 2;
+  const ladle = put(g, box(0.03, 0.03, 0.5, steel), potX + 0.22, 1.82, 0.28); ladle.rotation.set(0.5, 0.4, 0);
+
+  // atap terpal merah-putih + 4 tiang
+  for (const sx of [-0.98, 0.98]) for (const sz of [-0.46, 0.46]) put(g, box(0.055, 1.3, 0.055, woodDark), sx, 1.97, sz);
+  const canopyM = std(0xffffff, { map: stripeTexture('#c0392b', '#f6efe2', 8), roughness: 0.9 });
+  const canopy = put(g, new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, 1.5), canopyM), 0, 2.64, 0.02);
+  canopy.rotation.z = 0.035; canopy.castShadow = true;
+  put(g, box(2.4, 0.2, 0.04, canopyM), 0, 2.5, 0.77);
+  put(g, box(2.4, 0.2, 0.04, canopyM), 0, 2.5, -0.73);
+  // lampu bohlam
+  const bulbM = new THREE.MeshBasicMaterial({ color: 0xfff0c0 });
+  put(g, new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), bulbM), -0.6, 2.38, 0.42);
+  put(g, mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.18, 4), woodDark, { cast: false }), -0.6, 2.5, 0.42);
+
+  // bangku plastik di depan gerobak
+  const stoolM = std(0xd8472f, { roughness: 0.4 });
+  for (const [x, z] of [[0.15, 1.3], [0.95, 1.4]]) {
+    put(g, mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 16), stoolM), x, 0.45, z);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4;
+      const leg = put(g, mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.44, 6), stoolM), x + Math.cos(a) * 0.15, 0.22, z + Math.sin(a) * 0.15);
+      leg.rotation.set(Math.sin(a) * 0.1, 0, -Math.cos(a) * 0.1);
+    }
+  }
+
+  // uap dari panci
+  const steam = [];
+  const potTop = new THREE.Vector3(potX, 1.82, 0.05);
+  for (let i = 0; i < 14; i++) {
+    const m = new THREE.SpriteMaterial({ map: steamTex, transparent: true, depthWrite: false, opacity: 0, fog: false });
+    const s = new THREE.Sprite(m);
+    s.renderOrder = 6;
+    g.add(s);
+    steam.push({ s, m, ph: i / 14, sp: 0.2 + (i % 4) * 0.03 });
+  }
+  const st = { k: 1 };
+  anim.push((t) => {
+    for (const p of steam) {
+      const u = (t * p.sp + p.ph) % 1;
+      p.s.position.set(potTop.x + Math.sin(t * 0.9 + p.ph * 9) * 0.12 * u + u * 0.18, potTop.y + u * 1.25, potTop.z + Math.cos(t * 0.7 + p.ph * 7) * 0.06);
+      const sc = 0.3 + u * 0.8;
+      p.s.scale.set(sc, sc, 1);
+      p.m.opacity = Math.sin(u * Math.PI) * 0.6 * Math.min(1, st.k);
+    }
+  });
+  return { group: g, steam: st, bulb: new THREE.Vector3(-0.6, 2.38, 0.42) };
+}
+
+function buildTree(seed, anim, scale = 1) {
+  const r = rng(seed);
+  const g = new THREE.Group();
+  const bark = std(0x5a4632, { roughness: 1 });
+  put(g, mesh(new THREE.CylinderGeometry(0.2, 0.34, 3.0, 8), bark), 0, 1.5, 0);
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + r();
+    const br = put(g, mesh(new THREE.CylinderGeometry(0.07, 0.14, 1.6, 6), bark), Math.cos(a) * 0.5, 3.3, Math.sin(a) * 0.5);
+    br.rotation.set(Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7);
+  }
+  const crown = new THREE.Group();
+  crown.position.y = 3.9;
+  g.add(crown);
+  const greens = [0x3f7a35, 0x4e8c3a, 0x2f6b30, 0x5a9a40];
+  for (let i = 0; i < 7; i++) {
+    const rad = 1.0 + r() * 0.7;
+    const m = mesh(new THREE.IcosahedronGeometry(rad, 1), std(greens[i % greens.length], { roughness: 0.9, flatShading: true, envMapIntensity: 0.2 }));
+    m.position.set((r() - 0.5) * 2.8, (r() - 0.3) * 1.1, (r() - 0.5) * 2.2);
+    crown.add(m);
+  }
+  const ph = r() * 6;
+  anim.push((t) => { crown.rotation.z = Math.sin(t * 0.8 + ph) * 0.014; crown.rotation.x = Math.sin(t * 0.6 + ph) * 0.01; });
+  g.scale.setScalar(scale);
+  return g;
+}
+
+function buildStreetLamp() {
+  const g = new THREE.Group();
+  const dark = std(0x24342b, { roughness: 0.6, metalness: 0.4 });
+  put(g, mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.4, 8), dark), 0, 0.2, 0);
+  put(g, mesh(new THREE.CylinderGeometry(0.045, 0.07, 3.9, 8), dark), 0, 2.15, 0);
+  const arm = put(g, mesh(new THREE.TorusGeometry(0.45, 0.03, 6, 16, Math.PI / 2), dark), 0.45, 4.1, 0);
+  arm.rotation.z = Math.PI / 2;
+  const lantern = new THREE.Group();
+  lantern.position.set(0.45, 4.0, 0);
+  g.add(lantern);
+  put(lantern, mesh(new THREE.CylinderGeometry(0.2, 0.13, 0.36, 6, 1), new THREE.MeshStandardMaterial({ color: 0xfff1c9, emissive: 0xffd98a, emissiveIntensity: 0.6, transparent: true, opacity: 0.9 })), 0, 0, 0);
+  put(lantern, mesh(new THREE.ConeGeometry(0.27, 0.2, 6), dark), 0, 0.28, 0);
+  return g;
+}
+
+function buildPole(anim) {
+  const g = new THREE.Group();
+  const con = std(0x9d9a92, { roughness: 0.95 });
+  put(g, mesh(new THREE.CylinderGeometry(0.09, 0.14, 7.2, 8), con), 0, 3.6, 0);
+  put(g, box(1.5, 0.08, 0.1, std(0x4a3a2a)), 0, 6.5, 0);
+  put(g, box(1.1, 0.08, 0.1, std(0x4a3a2a)), 0, 5.9, 0);
+  void anim;
+  return g;
+}
+
+function wire(a, b, sag) {
+  const mid = a.clone().lerp(b, 0.5);
+  mid.y -= sag;
+  const pts = new THREE.QuadraticBezierCurve3(a, mid, b).getPoints(24);
+  return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x2a2724 }));
+}
+
+/* ============================================================
+   createStreet
+============================================================ */
+export function createStreet({ renderer, canvas, ui, onDone }) {
+  const scene = new THREE.Scene();
+  scene.background = skyTexture();
+  scene.fog = new THREE.Fog(0xf3dcae, 30, 105);
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 240);
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+
+  const anim = [];            // (t, dt) => void
+  const steamTex = dotTexture();
+
+  /* ---------------- Cahaya (sore hari, hangat) ---------------- */
+  scene.add(new THREE.HemisphereLight(0xdcecff, 0xa98b62, 0.9));
+  const sun = new THREE.DirectionalLight(0xffdfae, 2.6);
+  sun.position.set(-9, 12, 11);
+  sun.target.position.set(1, 0, -1);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -17, right: 17, top: 11, bottom: -9, near: 1, far: 48 });
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.03;
+  scene.add(sun, sun.target);
+
+  /* ---------------- Tanah ---------------- */
+  {
+    const walk = new THREE.Mesh(new THREE.PlaneGeometry(68, CURB_Z - WALL_Z), std(0xffffff, { map: pavingTexture(), roughness: 0.9, envMapIntensity: 0.15 }));
+    walk.rotation.x = -Math.PI / 2; walk.position.set(0, 0, (CURB_Z + WALL_Z) / 2); walk.receiveShadow = true;
+    scene.add(walk);
+    put(scene, box(68, 0.2, 0.3, std(0xb4ad9f, { roughness: 0.9 })), 0, 0.0, CURB_Z + 0.1);
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(68, 40), std(0xffffff, { map: asphaltTexture(), roughness: 0.95, envMapIntensity: 0.1 }));
+    road.rotation.x = -Math.PI / 2; road.position.set(0, -0.16, CURB_Z + 0.25 + 20); road.receiveShadow = true;
+    scene.add(road);
+    const dash = new THREE.Mesh(new THREE.PlaneGeometry(68, 0.16), new THREE.MeshBasicMaterial({ map: dashTexture(), transparent: true }));
+    dash.rotation.x = -Math.PI / 2; dash.position.set(0, -0.15, CURB_Z + 7.2);
+    scene.add(dash);
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(200, 80), std(0x7d745f, { roughness: 1 }));
+    back.rotation.x = -Math.PI / 2; back.position.set(0, -0.02, WALL_Z - 40); back.receiveShadow = true;
+    scene.add(back);
+    // selokan di tepi trotoar
+    put(scene, box(68, 0.03, 0.18, std(0x3a3733, { roughness: 1 }), { cast: false }), 0, 0.012, CURB_Z - 0.2);
+  }
+
+  /* ---------------- Deretan bangunan ---------------- */
+  const FACADES = [
+    { w: 4.2, h: 4.6, color: '#d8e4c4', trim: '#fbf5e4', shutter: '#4f7a5a', seed: 4, cols: 3, awning: ['#c0392b', '#f6efe2'] },
+    { w: 4.6, h: 5.0, color: '#f2d3a8', trim: '#fbf3e0', shutter: '#5b7f9a', seed: 6, cols: 3, balcony: true },
+    { w: 4.4, h: 4.7, color: '#c9dbe6', trim: '#fffaf0', shutter: '#8a4f3a', seed: 9, cols: 3, ac: true },
+    { w: 5.0, h: 5.2, color: '#efe2b6', trim: '#fbf3e0', shutter: '#3f6a52', seed: 12, cols: 3, arch: true },
+    { w: 4.6, h: 4.5, color: '#e6c9c0', trim: '#fff7ea', shutter: '#4a5f7a', seed: 15, cols: 3, awning: ['#2f6b4f', '#f6efe2'] },
+    { w: 4.8, h: 5.0, color: '#d4e0c8', trim: '#fbf5e4', shutter: '#7a4a3a', seed: 18, cols: 3 },
+  ];
+  const place = (cfg, x, i) => {
+    const b = buildHouse(cfg);
+    b.position.set(x, 0, WALL_Z);
+    scene.add(b);
+    return b;
+  };
+  {
+    let xr = -2.08;                                      // ke kiri dari tepi kiri toko
+    for (let i = 0; i < 7; i++) {
+      const cfg = FACADES[i % FACADES.length];
+      place(cfg, xr - cfg.w / 2, i);
+      if (i === 1) { /* ruko ini memegang spanduk selamat datang (di bawah) */ }
+      xr -= cfg.w + 0.08;
+    }
+    let xl = SHOP.x + SHOP.w / 2 + 0.08;                 // ke kanan dari tepi kanan toko
+    for (let i = 0; i < 6; i++) {
+      const cfg = FACADES[(i + 3) % FACADES.length];
+      place(cfg, xl + cfg.w / 2, i);
+      xl += cfg.w + 0.08;
+    }
+  }
+  // ruko tepat di kiri toko (x ≈ -2.08 .. -6.5): spanduk selamat datang
+  {
+    const banner = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 0.92), new THREE.MeshStandardMaterial({ map: welcomeTexture(), roughness: 0.95, side: THREE.DoubleSide }));
+    banner.position.set(-4.35, 3.35, WALL_Z + 0.5);
+    banner.castShadow = true;
+    scene.add(banner);
+    for (const sx of [-1, 1]) put(scene, box(0.03, 0.5, 0.03, std(0x2a2420), { cast: false }), -4.35 + sx * 2.2, 3.7, WALL_Z + 0.25);
+    for (const sx of [-1, 1]) {
+      const rope = put(scene, box(0.015, 0.55, 0.015, std(0x2a2420), { cast: false }), -4.35 + sx * 2.18, 3.55, WALL_Z + 0.5);
+      void rope;
+    }
+    anim.push((t) => { banner.rotation.x = Math.sin(t * 0.9) * 0.015; });
+  }
+
+  // deretan bangunan jauh (kabur di balik kabut)
+  {
+    const r = rng(33);
+    const cols = ['#c8c0a8', '#bfb59c', '#c9bda4', '#b9b8a6'];
+    for (let x = -42; x < 46; x += 7.5) {
+      const hh = 6 + r() * 7;
+      const m = mesh(new THREE.BoxGeometry(7, hh, 6), std(cols[Math.floor(r() * cols.length)], { roughness: 1, envMapIntensity: 0.1 }), { cast: false });
+      m.position.set(x + r() * 2, hh / 2, WALL_Z - 13 - r() * 4);
+      scene.add(m);
+      const rf = mesh(new THREE.CylinderGeometry(0.3, 4.6, 1.6, 4), std(0x9a5a3c, { roughness: 1, envMapIntensity: 0.1 }), { cast: false });
+      rf.rotation.y = Math.PI / 4;
+      rf.position.set(m.position.x, hh + 0.8, m.position.z);
+      scene.add(rf);
+    }
+  }
+
+  /* ---------------- Toko antik ---------------- */
+  const shopGroup = new THREE.Group();
+  shopGroup.position.set(SHOP.x, 0, WALL_Z);
+  scene.add(shopGroup);
+  const doorMat = new THREE.MeshBasicMaterial({ map: interiorTexture() });
+  const doorLight = new THREE.PointLight(0xffc477, 8, 9, 2);
+  doorLight.position.set(0, 1.9, 1.0);
+  const shopMarkerY = 1.7;                 // melayang di depan pintu, di bawah kanopi (tidak menutupi papan nama)
+  {
+    const { w: W, h: H, d: D } = SHOP;
+    const wood = std(0x4a2a17, { roughness: 0.55 });
+    const woodDark = std(0x2e1a0f, { roughness: 0.7 });
+    const gold = std(0xc9a54a, { metalness: 0.8, roughness: 0.35, envMapIntensity: 1 });
+    const tex = shopFacadeTexture(W, H);
+    const front = std(0xffffff, { map: tex, roughness: 0.85, envMapIntensity: 0.2 });
+    const side = std(0x2a3f32, { roughness: 0.95, envMapIntensity: 0.2 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), [side, side, side, side, front, side]);
+    body.position.set(0, H / 2, -D / 2);
+    body.castShadow = true; body.receiveShadow = true;
+    shopGroup.add(body);
+
+    // teras
+    put(shopGroup, box(W + 0.3, PORCH_H, 1.8, std(0x8d8070, { roughness: 0.9 })), 0, PORCH_H / 2, 0.9);
+    // pintu: bingkai, bagian dalam yang bercahaya, dua daun terbuka
+    put(shopGroup, box(1.65, 0.12, 0.2, woodDark), 0, 2.55, 0.08);
+    for (const sx of [-1, 1]) put(shopGroup, box(0.12, 2.5, 0.2, woodDark), sx * 0.78, 1.3, 0.08);
+    const inner = put(shopGroup, new THREE.Mesh(new THREE.PlaneGeometry(1.44, 2.46), doorMat), 0, 1.28, 0.03);
+    inner.renderOrder = 1;
+    for (const sx of [-1, 1]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(sx * 0.7, 1.26, 0.1);
+      pivot.rotation.y = sx < 0 ? -1.2 : 1.2;
+      const leaf = put(pivot, box(0.7, 2.42, 0.05, wood), -sx * 0.35, 0, 0);
+      put(pivot, box(0.5, 0.9, 0.02, woodDark), -sx * 0.35, 0.5, 0.03);
+      put(pivot, box(0.5, 0.9, 0.02, woodDark), -sx * 0.35, -0.55, 0.03);
+      void leaf;
+      shopGroup.add(pivot);
+    }
+    // etalase kaca di kiri-kanan pintu
+    for (const [sx, seed] of [[-1, 41], [1, 52]]) {
+      const x = sx * 1.78;
+      put(shopGroup, box(1.55, 1.8, 0.1, woodDark), x, 1.55, 0.04);
+      const win = put(shopGroup, new THREE.Mesh(new THREE.PlaneGeometry(1.34, 1.58), new THREE.MeshBasicMaterial({ map: displayWindowTexture(seed) })), x, 1.55, 0.1);
+      win.renderOrder = 1;
+      put(shopGroup, box(1.4, 0.04, 0.05, gold), x, 1.55, 0.115);
+      put(shopGroup, box(0.04, 1.6, 0.05, gold), x, 1.55, 0.115);
+      put(shopGroup, box(1.7, 0.16, 0.3, woodDark), x, 0.62, 0.12);   // ambang etalase
+    }
+    // kanopi belang hijau-krem
+    const aw = new THREE.Mesh(new THREE.BoxGeometry(W - 0.5, 0.06, 1.55), std(0xffffff, { map: stripeTexture('#2f6b4f', '#f1e6c9', 14), roughness: 0.9 }));
+    aw.position.set(0, 2.82, 0.76); aw.rotation.x = 0.2; aw.castShadow = true; aw.receiveShadow = true;
+    shopGroup.add(aw);
+    put(shopGroup, box(W - 0.5, 0.2, 0.05, std(0xffffff, { map: stripeTexture('#2f6b4f', '#f1e6c9', 14), roughness: 0.9 })), 0, 2.62, 1.5);
+    for (const sx of [-1, 1]) put(shopGroup, box(0.08, 2.6, 0.08, woodDark), sx * (W / 2 - 0.4), 1.3, 1.5);
+    // papan nama
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 0.88), new THREE.MeshStandardMaterial({ map: shopSignTexture(), roughness: 0.6 }));
+    sign.position.set(0, 3.64, 0.14);
+    shopGroup.add(sign);
+    put(shopGroup, box(3.62, 0.98, 0.1, woodDark), 0, 3.64, 0.08);
+    // papan BUKA bergantung di pintu
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.2), new THREE.MeshStandardMaterial({ map: lampBoardTexture(), roughness: 0.8, side: THREE.DoubleSide }));
+    board.position.set(0.52, 2.2, 0.6);
+    shopGroup.add(board);
+    put(shopGroup, mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.36, 4), woodDark, { cast: false }), 0.52, 2.5, 0.6);
+    anim.push((t) => { board.rotation.y = Math.sin(t * 1.3) * 0.18; });
+    // lentera di sisi pintu
+    const lamp = put(shopGroup, new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffe0a0 })), -1.45, 2.45, 1.15);
+    put(shopGroup, mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.4, 4), woodDark, { cast: false }), -1.45, 2.7, 1.15);
+    anim.push((t) => { const f = 1 + Math.sin(t * 7) * 0.04 + Math.sin(t * 13.3) * 0.03; lamp.scale.setScalar(f); });
+    // vas besar di teras
+    put(shopGroup, makeVase(1.0, 0x2f5d7a), -2.5, PORCH_H, 1.15);
+    put(shopGroup, makeVase(0.82, 0xa8452e), 2.5, PORCH_H, 1.2);
+    put(shopGroup, makeVase(0.5, 0xe8dcc0), 2.15, PORCH_H, 1.45);
+    // pediment segitiga
+    const shape = new THREE.Shape();
+    shape.moveTo(-W / 2 - 0.15, 0); shape.lineTo(W / 2 + 0.15, 0); shape.lineTo(0, 1.15); shape.closePath();
+    const ped = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.4, bevelEnabled: false }), wood);
+    ped.position.set(0, H, -0.32);
+    ped.castShadow = true;
+    shopGroup.add(ped);
+    put(shopGroup, box(W + 0.4, 0.16, 0.55, gold), 0, H + 0.02, 0.05);
+    const medal = put(shopGroup, mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.05, 28), gold, { cast: false }), 0, H + 0.58, 0.1);
+    medal.rotation.x = Math.PI / 2;
+    put(shopGroup, mesh(new THREE.SphereGeometry(0.07, 10, 8), gold), 0, H + 1.22, 0.0);
+    shopGroup.add(doorLight);
+  }
+
+  /* ---------------- Gerobak soto ---------------- */
+  const cart = buildCart(anim, steamTex);
+  cart.group.position.copy(CART);
+  cart.group.rotation.y = 0.04;
+  scene.add(cart.group);
+  const cartLight = new THREE.PointLight(0xffc27a, 4, 5, 2);
+  cartLight.position.set(CART.x + cart.bulb.x, cart.bulb.y - 0.2, CART.z + cart.bulb.z);
+  scene.add(cartLight);
+  anim.push((t) => { cartLight.intensity = 4 * (1 + Math.sin(t * 9) * 0.03); });
+
+  /* ---------------- Pohon, lampu jalan, tiang listrik, bendera ---------------- */
+  for (const [x, z, s, seed] of [[-9.4, -1.9, 1.0, 3], [10.2, -1.9, 1.05, 8], [-17.5, -1.6, 1.1, 14], [18.5, -1.8, 1.0, 21]]) {
+    const tr = buildTree(seed, anim, s);
+    tr.position.set(x, 0, z);
+    scene.add(tr);
+  }
+  for (const x of [-7.4, 8.6, 16, -16]) {
+    const lp = buildStreetLamp();
+    lp.position.set(x, 0, CURB_Z - 0.35);
+    lp.rotation.y = x < 0 ? 0 : Math.PI;
+    scene.add(lp);
+  }
+  const poleA = buildPole(anim); poleA.position.set(-10.2, 0, CURB_Z - 0.6);
+  const poleB = buildPole(anim); poleB.position.set(11.6, 0, CURB_Z - 0.6);
+  scene.add(poleA, poleB);
+  for (const [yy, off] of [[6.5, 0.7], [6.5, -0.7], [5.9, 0.5]]) {
+    scene.add(wire(new THREE.Vector3(poleA.position.x + off, yy, poleA.position.z), new THREE.Vector3(poleB.position.x + off, yy, poleB.position.z), 0.7));
+    scene.add(wire(new THREE.Vector3(poleB.position.x + off, yy, poleB.position.z), new THREE.Vector3(poleB.position.x + 14 + off, yy, poleB.position.z - 1), 0.7));
+    scene.add(wire(new THREE.Vector3(poleA.position.x + off, yy, poleA.position.z), new THREE.Vector3(poleA.position.x - 14 + off, yy, poleA.position.z - 1), 0.7));
+  }
+  // umbul-umbul merah-putih di sepanjang jalan
+  {
+    const A = new THREE.Vector3(-10.2, 5.3, 2.4), B = new THREE.Vector3(11.6, 5.3, 2.4);
+    const curve = new THREE.QuadraticBezierCurve3(A, A.clone().lerp(B, 0.5).setY(4.2), B);
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(40)), new THREE.LineBasicMaterial({ color: 0x3a3430 })));
+    const N = 46;
+    const flags = [];
+    const triGeo = new THREE.BufferGeometry();
+    triGeo.setAttribute('position', new THREE.Float32BufferAttribute([-0.2, 0, 0, 0.2, 0, 0, 0, -0.42, 0], 3));
+    triGeo.computeVertexNormals();
+    const mats = [new THREE.MeshBasicMaterial({ color: 0xd23a32, side: THREE.DoubleSide }), new THREE.MeshBasicMaterial({ color: 0xf8f1e2, side: THREE.DoubleSide }), new THREE.MeshBasicMaterial({ color: 0xf2b134, side: THREE.DoubleSide })];
+    for (let i = 0; i < N; i++) {
+      const f = new THREE.Mesh(triGeo, mats[i % 3]);
+      curve.getPoint((i + 0.5) / N, f.position);
+      scene.add(f);
+      flags.push({ f, ph: i * 0.7 });
+    }
+    anim.push((t) => { for (const p of flags) p.f.rotation.z = Math.sin(t * 1.6 + p.ph) * 0.18; });
+  }
+
+  /* ---------------- Awan & debu bercahaya ---------------- */
+  {
+    const clouds = [];
+    for (let i = 0; i < 7; i++) {
+      const m = new THREE.SpriteMaterial({ map: cloudTexture(i + 3), transparent: true, depthWrite: false, opacity: 0.85, fog: false });
+      const s = new THREE.Sprite(m);
+      const sc = 34 + (i % 3) * 12;
+      s.scale.set(sc, sc * 0.5, 1);
+      s.position.set(-90 + i * 30, 12 + (i % 3) * 3, -78);
+      scene.add(s);
+      clouds.push(s);
+    }
+    anim.push((t, dt) => {
+      for (const c of clouds) { c.position.x += dt * 0.45; if (c.position.x > 100) c.position.x = -100; }
+    });
+    const N = 90;
+    const pos = new Float32Array(N * 3);
+    const rg = rng(91);
+    const base = Array.from({ length: N }, () => [-9 + rg() * 20, 0.6 + rg() * 5, -2.5 + rg() * 9, rg() * 6, 0.12 + rg() * 0.25]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const dust = new THREE.Points(geo, new THREE.PointsMaterial({ map: dotTexture(), color: 0xffe3a8, size: 0.07, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending }));
+    dust.frustumCulled = false;
+    scene.add(dust);
+    anim.push((t) => {
+      for (let i = 0; i < N; i++) {
+        const [x, y, z, ph, sp] = base[i];
+        pos[i * 3] = x + Math.sin(t * sp + ph) * 0.5 + t * 0.04 % 1;
+        pos[i * 3 + 1] = y + Math.sin(t * sp * 0.8 + ph * 1.7) * 0.3;
+        pos[i * 3 + 2] = z + Math.cos(t * sp * 0.9 + ph) * 0.4;
+      }
+      geo.attributes.position.needsUpdate = true;
+    });
+  }
+
+  /* ---------------- Penanda "ketuk di sini" + cincin di tanah ---------------- */
+  const markerTex = markerTexture();
+  const mkMarker = (x, y, z) => {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: markerTex, transparent: true, depthTest: false, depthWrite: false, opacity: 0 }));
+    m.scale.set(0.55, 0.55, 1);
+    m.position.set(x, y, z);
+    m.renderOrder = 20;
+    scene.add(m);
+    return m;
+  };
+  const cartMarker = mkMarker(CART.x, 3.35, CART.z + 0.1);
+  const shopMarker = mkMarker(SHOP.x, shopMarkerY, WALL_Z + 2.1);
+  const ringTex = canvasTex(256, 256, (g) => {
+    g.shadowColor = '#ffcf6b'; g.shadowBlur = 22;
+    g.strokeStyle = '#ffd98a'; g.lineWidth = 12;
+    g.beginPath(); g.ellipse(128, 128, 98, 98, 0, 0, Math.PI * 2); g.stroke();
+  });
+  const mkRing = (x, z, s) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s), new THREE.MeshBasicMaterial({ map: ringTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.03, z); m.renderOrder = 3;
+    scene.add(m);
+    return m;
+  };
+  const cartRing = mkRing(CART.x + 0.3, CART.z + 0.35, 3.9);
+  const shopRing = mkRing(SHOP.x, WALL_Z + 1.1, 3.3);
+
+  // kotak ketuk (tak terlihat) — lebih besar dari modelnya supaya mudah diketuk di HP
+  const hitMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+  const cartHit = put(scene, new THREE.Mesh(new THREE.BoxGeometry(3.8, 3.0, 2.2), hitMat), CART.x + 0.4, 1.5, CART.z + 0.3);
+  const shopHit = put(shopGroup, new THREE.Mesh(new THREE.BoxGeometry(SHOP.w, 3.6, 2.2), hitMat), 0, 1.8, 0.9);
+
+  /* ---------------- Kamera ---------------- */
+  function computeView(name) {
+    const base = VIEWS[name];
+    const portrait = camera.aspect < 0.85;
+    const v = portrait && base.p ? { ...base, ...base.p } : base;
+    const tanHalf = Math.tan((camera.fov / 2) * DEG);
+    const pad = portrait ? 1.5 : 1.3;
+    const dist = Math.max((v.h * pad) / 2 / tanHalf, (v.w * 1.08) / 2 / (tanHalf * camera.aspect));
+    const target = new THREE.Vector3(...v.t);
+    const pos = target.clone().addScaledVector(new THREE.Vector3(...v.dir).normalize(), dist);
+    const look = target.clone().add(new THREE.Vector3(0, -v.h * (portrait ? (v.po ?? 0.2) : 0.12), 0));
+    return { pos, look };
+  }
+  const cur = { pos: new THREE.Vector3(), look: new THREE.Vector3() };
+  let currentView = 'wide';
+  let camTween = null;
+  function setView(name) {
+    currentView = name;
+    const v = computeView(name);
+    cur.pos.copy(v.pos); cur.look.copy(v.look);
+  }
+  function flyTo(name, duration, ease = 'power2.inOut') {
+    currentView = name;
+    camTween?.kill();
+    const v = computeView(name);
+    const fp = cur.pos.clone(), fl = cur.look.clone();
+    const p = { t: 0 };
+    return new Promise((resolve) => {
+      camTween = gsap.to(p, {
+        t: 1, duration, ease,
+        onUpdate: () => { cur.pos.lerpVectors(fp, v.pos, p.t); cur.look.lerpVectors(fl, v.look, p.t); },
+        onComplete: () => { camTween = null; resolve(); },
+      });
+    });
+  }
+
+  /* ---------------- Gasing (DOM) yang berjalan di trotoar 3D ---------------- */
+  // Tas tenis dijinjing sarung tangan kiri Gasing (satu elemen: createGasing3D({ bag: true }))
+  let actorWrap = null, actor = null, bubbleEl = null;
+  const A = { x: START.x, z: START.z, fade: 1, walking: false, hopAt: 0, baseH: 400, bubble: 0 };
+  const tmp = new THREE.Vector3();
+  const pw = new THREE.Vector3();
+  const canvasSize = { w: 1, h: 1 };
+
+  function spawnActor() {
+    killActor();
+    actorWrap = document.createElement('div');
+    actorWrap.className = 'shop-actors';
+    actor = createGasing3D({ label: 'Gasing berjalan di Surabaya sambil menjinjing tas tenis', className: 'shop-gasing', yaw: 0.4, bag: true });
+    bubbleEl = document.createElement('div');
+    bubbleEl.className = 'street-bubble';
+    bubbleEl.textContent = 'Nyam! Sotonya mantap 😋';
+    actorWrap.append(actor, bubbleEl);
+    canvas.after(actorWrap);
+    sizeActor();
+  }
+  function killActor() { actorWrap?.remove(); actorWrap = null; actor = null; bubbleEl = null; }
+  function sizeActor() {
+    if (!actor) return;
+    const h = Math.round(Math.min(canvasSize.h * 0.5, 560));
+    A.baseH = h;
+    actor.style.height = `${h}px`;
+    actor.style.width = `${Math.round(h * 1000 / 1193)}px`;
+  }
+  function projectPoint(p) {
+    tmp.copy(p).applyMatrix4(camera.matrixWorldInverse);
+    const depthZ = -tmp.z;
+    tmp.copy(p).project(camera);
+    const tanHalf = Math.tan((camera.fov / 2) * DEG);
+    return {
+      sx: (tmp.x * 0.5 + 0.5) * canvasSize.w,
+      sy: (-tmp.y * 0.5 + 0.5) * canvasSize.h,
+      px: canvasSize.h / (2 * Math.max(0.3, depthZ) * tanHalf),
+    };
+  }
+  function standAt(el, p, worldH, aspect, foot, tilt, opacity) {
+    const { sx, sy, px } = projectPoint(p);
+    const baseH = A.baseH;
+    const s = (worldH * px) / baseH;
+    const bw = baseH * aspect;
+    el.style.opacity = String(opacity);
+    el.style.transform =
+      `translate3d(${(sx - bw / 2).toFixed(1)}px, ${(sy + foot * baseH * s - baseH).toFixed(1)}px, 0) rotate(${tilt.toFixed(2)}deg) scale(${s.toFixed(4)})`;
+  }
+  function placeActor(t) {
+    if (!actor) return;
+    const tilt = A.walking ? Math.sin(t * 7.5) * 2.2 : 0;
+    const y = A.z < WALL_Z + 2.2 ? DOOR.y : 0;       // di teras sedikit lebih tinggi
+    standAt(actor, pw.set(A.x, y, A.z), ACTOR_H, 1000 / 1193, ACTOR_FOOT, tilt, A.fade);
+    // gelembung ucapan di atas kepala Gasing
+    if (A.bubble > 0.001) {
+      const { sx, sy, px } = projectPoint(pw.set(A.x, ACTOR_H * 0.82, A.z));
+      bubbleEl.style.opacity = String(Math.min(1, A.bubble));
+      bubbleEl.style.transform = `translate3d(${(sx + px * 0.34).toFixed(1)}px, ${(sy - px * 0.16).toFixed(1)}px, 0) translateY(-100%) scale(${(0.6 + 0.4 * A.bubble).toFixed(3)})`;
+    } else {
+      bubbleEl.style.opacity = '0';
+    }
+  }
+
+  /** Gasing berjalan menyusuri kurva yang melewati titik-titik [x, z] dengan kecepatan merata. */
+  let walkTween = null;
+  function walkAlong(points, duration, { delay = 0, ease = 'power1.inOut' } = {}) {
+    const curve = new THREE.CatmullRomCurve3(points.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+    const p = { u: 0 };
+    const v = new THREE.Vector3();
+    return new Promise((resolve) => {
+      walkTween = gsap.to(p, {
+        u: 1, duration, delay, ease,
+        onStart: () => { A.walking = true; actor?.setState?.('walk'); },
+        onUpdate: () => { curve.getPointAt(p.u, v); A.x = v.x; A.z = v.z; },
+        onComplete: () => { A.walking = false; actor?.setState?.('idle'); walkTween = null; resolve(); },
+      });
+    });
+  }
+
+  /* ---------------- State & alur ---------------- */
+  let state = 'off';          // off | intro | cart | eating | shop | entering
+  let runId = 0;
+  let hoverTarget = false;
+  let px = 0, py = 0, tpx = 0, tpy = 0;
+  const fx = { door: 0 };
+  const cartM = { o: 0 }, shopM = { o: 0 };
+  const sleep = (s) => { const id = runId; return new Promise((r) => setTimeout(() => { if (id === runId) r(); }, s * 1000)); };
+
+  function applyFx() {
+    doorLight.intensity = 8 + fx.door * 38;
+    doorMat.color.setScalar(1 + fx.door * 1.4);
+  }
+
+  function leave() {
+    runId++;
+    camTween?.kill(); camTween = null;
+    walkTween?.kill(); walkTween = null;
+    gsap.killTweensOf([A, fx, cartM, shopM, cart.steam, cartRing.material, shopRing.material, cartMarker.material, shopMarker.material]);
+    killActor();
+    fx.door = 0; applyFx();
+    cart.steam.k = 1;
+    cartMarker.material.opacity = 0; shopMarker.material.opacity = 0;
+    cartRing.material.opacity = 0; shopRing.material.opacity = 0;
+    A.fade = 1; A.bubble = 0; A.walking = false;
+    state = 'off';
+    canvas.style.cursor = 'default';
+  }
+
+  /** Scene 3: kamera turun dari atas, Gasing datang dari kiri; ketuk gerobak soto. */
+  async function enter() {
+    leave();
+    const my = runId;
+    state = 'intro';
+    A.x = START.x; A.z = START.z;
+    ui.hint(null); ui.counter?.(null);
+    spawnActor();
+    setView('intro');
+
+    const cam = flyTo('wide', 3.8, 'power2.inOut');
+    const walk = walkAlong([[START.x, START.z], [-7.0, 2.55], [STAND.x, STAND.z]], 4.0, { delay: 0.5, ease: 'power1.out' });
+    await Promise.all([cam, walk]);
+    if (my !== runId) return;
+
+    actor?.hop();                      // tas ikut terayun
+    await sleep(0.45);
+    if (my !== runId) return;
+    state = 'cart';
+    gsap.to(cartM, { o: 1, duration: 0.5 });
+    ui.hint('Ketuk gerobak soto');
+  }
+
+  /** Gerobak diketuk: Gasing menghampiri, kamera mendekat, makan soto sambil meloncat-loncat senang. */
+  async function eat() {
+    if (state !== 'cart') return;
+    const my = runId;
+    state = 'eating';
+    ui.hint(null);
+    canvas.style.cursor = 'default';
+    gsap.to(cartM, { o: 0, duration: 0.3 });
+    gsap.to(cart.steam, { k: 2.2, duration: 1.0 });
+    const cam = flyTo('cart', 2.0, 'power2.inOut');
+    await walkAlong([[A.x, A.z], [EAT_AT.x, EAT_AT.z]], 1.5, { ease: 'power1.inOut' });
+    await cam;
+    if (my !== runId) return;
+
+    gsap.fromTo(A, { bubble: 0 }, { bubble: 1, duration: 0.4, ease: 'back.out(2)' });
+    actor?.setState?.('eat');          // tas diletakkan, tangan memegang mangkuk & sendok
+    await sleep(1.4);                  // beri waktu: letakkan tas → angkat mangkuk → suapan pertama
+    if (my !== runId) return;
+    for (let i = 0; i < 4; i++) {
+      actor?.hop();
+      await sleep(0.8);
+      if (my !== runId) return;
+    }
+    actor?.setState?.('idle');
+    gsap.to(A, { bubble: 0, duration: 0.3 });
+    gsap.to(cart.steam, { k: 1, duration: 1.5 });
+    ui.caption(CONFIG.captions.s3_kenyang);
+    await flyTo('after', 2.2, 'power2.inOut');
+    if (my !== runId) return;
+    state = 'shop';
+    gsap.to(shopM, { o: 1, duration: 0.5 });
+    ui.hint('Ketuk toko antik');
+  }
+
+  /** Toko diketuk: Gasing berjalan ke pintu, kamera mendekat, Gasing memudar ke dalam cahaya hangat → scene 4. */
+  async function goShop() {
+    if (state !== 'shop') return;
+    const my = runId;
+    state = 'entering';
+    ui.hint(null);
+    canvas.style.cursor = 'default';
+    gsap.to(shopM, { o: 0, duration: 0.3 });
+    flyTo('shop', 3.4, 'power2.inOut');
+    gsap.to(fx, { door: 0.55, duration: 3.6, ease: 'power1.in', onUpdate: applyFx });
+    gsap.to(A, { fade: 0, duration: 0.7, delay: 3.2, ease: 'power1.in' });
+    await walkAlong([[A.x, A.z], [0.9, 2.3], [3.4, 1.7], [4.5, -0.7], [DOOR.x, DOOR.z]], 4.0, { ease: 'power1.inOut' });
+    if (my !== runId) return;
+    ui.flash?.(0.8);
+    gsap.to(fx, { door: 1, duration: 0.6, onUpdate: applyFx });
+    flyTo('door', 0.9, 'power2.in');
+    await sleep(0.8);
+    if (my !== runId) return;
+    onDone?.();
+  }
+
+  /* ---------------- Input ---------------- */
+  const ray = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  let down = null;
+  const targets = () => (state === 'cart' ? [cartHit, cartMarker] : state === 'shop' ? [shopHit, shopMarker] : []);
+  const interactive = () => state === 'cart' || state === 'shop' || state === 'intro';
+  function pickTarget(e) {
+    const list = targets();
+    if (!list.length) return false;
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    return ray.intersectObjects(list, true).length > 0;
+  }
+  canvas.addEventListener('pointerdown', (e) => { if (interactive()) down = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!interactive()) return;
+    const r = canvas.getBoundingClientRect();
+    tpx = ((e.clientX - r.left) / r.width) * 2 - 1;
+    tpy = ((e.clientY - r.top) / r.height) * 2 - 1;
+    if ((state === 'cart' || state === 'shop') && e.pointerType === 'mouse') {
+      hoverTarget = pickTarget(e);
+      canvas.style.cursor = hoverTarget ? 'pointer' : 'default';
+    }
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    const d = down; down = null;
+    if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) return;
+    if (!pickTarget(e)) return;
+    if (state === 'cart') eat();
+    else if (state === 'shop') goShop();
+  });
+  canvas.addEventListener('pointercancel', () => { down = null; });
+
+  /* ---------------- Loop ---------------- */
+  let lastT = 0;
+  function update(t) {
+    const dt = Math.min(0.1, Math.max(0, t - lastT)); lastT = t;
+    for (const fn of anim) fn(t, dt);
+    if (state === 'off') return;
+
+    if (state === 'cart' || state === 'shop') { px += (tpx - px) * 0.05; py += (tpy - py) * 0.05; }
+    camera.position.copy(cur.pos);
+    if (state === 'cart' || state === 'shop') {
+      camera.position.x += px * 0.35 + Math.sin(t * 0.3) * 0.04;
+      camera.position.y += -py * 0.12 + Math.sin(t * 0.4) * 0.02;
+    }
+    camera.lookAt(cur.look);
+    camera.updateMatrixWorld();
+
+    if (A.walking && t - A.hopAt > 0.8) { actor?.hop(); A.hopAt = t; }
+    placeActor(t);
+
+    const pulse = 0.5 + Math.sin(t * 3) * 0.5;
+    const bob = Math.sin(t * 2.4) * 0.07;
+    cartMarker.position.y = 3.35 + bob; shopMarker.position.y = shopMarkerY + bob;
+    const hs = hoverTarget ? 0.07 : 0;
+    cartMarker.material.opacity = cartM.o; shopMarker.material.opacity = shopM.o;
+    const sc = 0.55 + pulse * 0.04 + hs;
+    cartMarker.scale.set(sc, sc, 1); shopMarker.scale.set(sc * 1.6, sc * 1.6, 1);   // toko lebih jauh → penanda dibuat lebih besar
+    cartRing.material.opacity = cartM.o * (0.35 + pulse * 0.4 + hs * 3);
+    shopRing.material.opacity = shopM.o * (0.35 + pulse * 0.4 + hs * 3);
+    const rs = 1 + pulse * 0.05;
+    cartRing.scale.setScalar(rs); shopRing.scale.setScalar(rs);
+  }
+
+  function resize(w, h) {
+    canvasSize.w = w; canvasSize.h = h;
+    camera.aspect = w / h;
+    camera.fov = camera.aspect < 0.85 ? 50 : 35;
+    camera.updateProjectionMatrix();
+    if (!camTween) setView(currentView);
+    sizeActor();
+  }
+
+  return { scene, camera, enter, leave, update, resize };
+}

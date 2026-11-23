@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1b130e" />
+  <title>Selamat Ulang Tahun</title>
+  <link rel="icon" href="assets/characters/gasing.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+        "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="gl" aria-label="Scene 3D koper"></canvas>
+    <main id="stage2d"></main>
+
+    <header class="hud-top">
+      <div class="progress" id="progress" aria-hidden="true"></div>
+      <div class="scene-label" id="sceneLabel"></div>
+      <button class="icon-btn" id="muteBtn" hidden aria-label="Musik">♪</button>
+    </header>
+
+    <footer class="hud-bottom">
+      <div class="pills">
+        <div class="pill" id="hint" hidden></div>
+        <div class="pill pill-gold" id="counter" hidden></div>
+      </div>
+      <p class="caption" id="caption" aria-live="polite"></p>
+      <button class="btn" id="actionBtn" hidden></button>
+    </footer>
+
+    <div class="note" id="note" hidden role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+      <article class="note-paper">
+        <button class="note-close" id="noteClose" aria-label="Tutup catatan">✕</button>
+        <small class="note-kicker">Bagian kereta</small>
+        <h2 id="noteTitle"></h2>
+        <div class="note-body" id="noteBody"></div>
+      </article>
+    </div>
+
+    <div class="end-bar" id="endBar" hidden>
+      <button class="btn btn-ghost" id="endZoom">⤢ Perbesar TV</button>
+      <button class="btn" id="endRestart">↺ Ulangi dari awal</button>
+    </div>
+
+    <div id="flash" aria-hidden="true"></div>
+    <div id="fader" aria-hidden="true"></div>
+    <div id="confetti" aria-hidden="true"></div>
+
+    <section class="start" id="start">
+      <div class="start-gasing" id="startGasing"></div>
+      <p class="start-kicker">Sebuah perjalanan kecil untuk</p>
+      <h1 class="start-title" id="startTitle"></h1>
+      <button class="btn btn-big" id="startBtn">Mulai Perjalanan →</button>
+      <p class="start-tip">Nyalakan suara 🔊 · bisa di HP maupun laptop</p>
+    </section>
+
+    <div class="error" id="error" hidden></div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

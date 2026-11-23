@@ -1,0 +1,530 @@
+<title>Saucer Sprout</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Inter:wght@400;500&display=swap">
+<style>
+/* Layout: one full-bleed 3D stage; name tag pinned top-left, a pill of controls floating bottom-center */
+:root{
+  --bg:#EDF1E0;
+  --bg-glow:#FAFCF2;
+  --fg:#1E2414;
+  --muted:#5B6647;
+  --accent:#5E7C17;
+  --on-accent:#F6F9EC;
+  --chip:rgba(255,255,255,.74);
+  --chip-line:rgba(30,36,20,.14);
+  --font-display:"Fredoka","Trebuchet MS",system-ui,sans-serif;
+  --font-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12160D; --bg-glow:#2A3420; --fg:#E8EEDA; --muted:#A0AD8A;
+    --accent:#B3D34E; --on-accent:#1A2010;
+    --chip:rgba(28,35,20,.74); --chip-line:rgba(232,238,218,.16);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12160D; --bg-glow:#2A3420; --fg:#E8EEDA; --muted:#A0AD8A;
+  --accent:#B3D34E; --on-accent:#1A2010;
+  --chip:rgba(28,35,20,.74); --chip-line:rgba(232,238,218,.16);
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{
+  background-color:var(--bg);
+  background-image:radial-gradient(ellipse 70% 60% at 50% 46%, var(--bg-glow), var(--bg));
+  color:var(--fg);
+  font-family:var(--font-body);
+  overflow:hidden;
+}
+#stage{position:fixed; inset:0}
+#stage canvas{display:block; width:100%; height:100%; touch-action:none; cursor:grab}
+#stage canvas:active{cursor:grabbing}
+.tag{
+  position:fixed;
+  top:calc(env(safe-area-inset-top,0px) + 18px);
+  left:0; right:0;
+  padding-left:max(16px, env(safe-area-inset-left,0px));
+  padding-right:max(16px, env(safe-area-inset-right,0px));
+  display:grid; gap:4px;
+  pointer-events:none;
+}
+.tag h1{
+  margin:0;
+  font-family:var(--font-display);
+  font-weight:600;
+  font-size:clamp(24px, 4.2vw, 32px);
+  letter-spacing:.01em;
+  line-height:1.05;
+  text-wrap:balance;
+}
+.tag p{margin:0; color:var(--muted); font-size:13px; line-height:1.45; max-width:44ch}
+.bar{
+  position:fixed;
+  left:50%; transform:translateX(-50%);
+  bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  display:flex; gap:4px;
+  padding:5px;
+  border-radius:999px;
+  background:var(--chip);
+  border:1px solid var(--chip-line);
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+}
+.bar button{
+  font:500 13px/1 var(--font-body);
+  color:var(--fg);
+  background:transparent;
+  border:0;
+  padding:10px 16px;
+  border-radius:999px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.bar button:hover{background:var(--chip-line)}
+.bar button[aria-pressed="true"]{background:var(--accent); color:var(--on-accent)}
+.bar button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+#nogl{
+  position:fixed; inset:0; display:grid; place-items:center; text-align:center;
+  padding-left:max(16px, env(safe-area-inset-left,0px));
+  padding-right:max(16px, env(safe-area-inset-right,0px));
+  color:var(--muted);
+}
+#nogl[hidden]{display:none}
+</style>
+
+<div id="stage" aria-label="Interactive 3D model of a green saucer-shaped character with big eyes, a curved horn and one leg"></div>
+
+<header class="tag">
+  <h1>Saucer Sprout</h1>
+  <p>Drag to turn it around, scroll or pinch to zoom, tap it to make it hop.</p>
+</header>
+
+<nav class="bar" aria-label="View controls">
+  <button id="btn-spin" type="button" aria-pressed="false">Spin</button>
+  <button id="btn-hop" type="button">Hop</button>
+  <button id="btn-reset" type="button">Reset view</button>
+</nav>
+
+<div id="nogl" hidden>This 3D view needs WebGL, which this browser has turned off.</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+  if(!window.THREE){ document.getElementById('nogl').hidden=false; return; }
+  const V3=THREE.Vector3;
+  const stage=document.getElementById('stage');
+  const reduceMotion=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let renderer;
+  try{ renderer=new THREE.WebGLRenderer({antialias:true, alpha:true}); }
+  catch(e){ document.getElementById('nogl').hidden=false; return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setClearColor(0x000000, 0);
+  stage.appendChild(renderer.domElement);
+
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+  const TARGET=new V3(0, 0.55, 0);
+  const HOME_DIR=new V3(1.5, 1.35, 8.2).normalize();
+  scene.add(camera);
+
+  const controls=new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.copy(TARGET);
+  controls.enableDamping=true;
+  controls.dampingFactor=0.08;
+  controls.enablePan=false;
+  controls.autoRotateSpeed=1.8;
+
+  // Light rides with the camera so the cartoon shading always reads like the drawing (lit from upper-left)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.38));
+  const key=new THREE.DirectionalLight(0xffffff, 0.72);
+  key.position.set(-4, 5, 4);
+  camera.add(key);
+
+  // Toon ramp: shadow tone, flat body tone, a thin highlight band
+  const ramp=[120,120,120,120,225,225,225,255];
+  const rampData=new Uint8Array(ramp.length*4);
+  ramp.forEach((v,i)=>{ rampData.set([v,v,v,255], i*4); });
+  const grad=new THREE.DataTexture(rampData, ramp.length, 1, THREE.RGBAFormat);
+  grad.minFilter=grad.magFilter=THREE.NearestFilter;
+  grad.generateMipmaps=false;
+  grad.needsUpdate=true;
+  const toon=(color)=>new THREE.MeshToonMaterial({color, gradientMap:grad});
+
+  // Ink outline: back faces pushed out along the normal
+  function inkMat(w){
+    return new THREE.ShaderMaterial({
+      uniforms:{w:{value:w}},
+      vertexShader:'uniform float w;void main(){vec3 p=position+normalize(normal)*w;gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}',
+      fragmentShader:'void main(){gl_FragColor=vec4(0.07,0.07,0.05,1.0);}',
+      side:THREE.BackSide
+    });
+  }
+  const hitMeshes=[];
+  function part(geo, mat, w){
+    const g=new THREE.Group();
+    const m=new THREE.Mesh(geo, mat);
+    g.add(m); hitMeshes.push(m);
+    if(w) g.add(new THREE.Mesh(geo, inkMat(w)));
+    return g;
+  }
+
+  // Tube whose radius changes along a curve
+  function taperTube(points, radiusAt, tubSeg, radSeg){
+    tubSeg=tubSeg||64; radSeg=radSeg||28;
+    const curve=new THREE.CatmullRomCurve3(points);
+    const fr=curve.computeFrenetFrames(tubSeg, false);
+    const pos=[], nor=[], idx=[];
+    for(let i=0;i<=tubSeg;i++){
+      const t=i/tubSeg, P=curve.getPointAt(t), r=radiusAt(t);
+      const N=fr.normals[i], B=fr.binormals[i];
+      for(let j=0;j<=radSeg;j++){
+        const a=j/radSeg*Math.PI*2, s=Math.sin(a), c=-Math.cos(a);
+        const nx=c*N.x+s*B.x, ny=c*N.y+s*B.y, nz=c*N.z+s*B.z;
+        nor.push(nx,ny,nz);
+        pos.push(P.x+r*nx, P.y+r*ny, P.z+r*nz);
+      }
+    }
+    for(let i=1;i<=tubSeg;i++){
+      for(let j=1;j<=radSeg;j++){
+        const a=(radSeg+1)*(i-1)+(j-1), b=(radSeg+1)*i+(j-1), c=(radSeg+1)*i+j, d=(radSeg+1)*(i-1)+j;
+        idx.push(a,b,d, b,c,d);
+      }
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor,3));
+    g.setIndex(idx);
+    g.userData.end=curve.getPointAt(1);
+    g.userData.start=curve.getPointAt(0);
+    return g;
+  }
+  const ss=(a,b,x)=>{const t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t);};
+
+  const GREEN=0xB3D34E, LIP=0xBCD95A, UNDER=0x5B401A, EYE=0xFFFDF0, PUPIL=0x383232;
+
+  const root=new THREE.Group(); scene.add(root);           // hop + bob
+  const body=new THREE.Group(); root.add(body);            // the character's tilt
+  body.rotation.set(0.1, 0, 0.14);
+
+  // ---- Dome: a bulb that narrows into a neck, leaning back
+  const prof=new THREE.SplineCurve([
+    // flares out into the rim at the base, rounds over the shoulders, then sweeps in a concave curve up into the stalk
+    [1.62,-0.06],[1.5,0.14],[1.3,0.34],[1.12,0.55],[0.98,0.76],[0.84,0.98],[0.68,1.16],
+    [0.52,1.3],[0.4,1.42],[0.3,1.5],[0.2,1.55],[0.0,1.58]
+  ].map(p=>new THREE.Vector2(p[0], p[1]<0.3 ? p[1] : 0.3+(p[1]-0.3)*1.22))).getPoints(70);
+  const SEG=80;
+  const domeGeo=new THREE.LatheGeometry(prof, SEG);
+  (function(){
+    const pa=domeGeo.attributes.position;
+    for(let i=0;i<pa.count;i++){
+      const x=pa.getX(i), y=pa.getY(i), z=pa.getZ(i);
+      pa.setXYZ(i, x*1.06, y, z-0.34*ss(0.2,1.83,y));
+    }
+    domeGeo.computeVertexNormals();
+    // re-weld the seam normals so the outline has no crack
+    const na=domeGeo.attributes.normal, P=prof.length, n=new V3();
+    for(let j=0;j<P;j++){
+      const i0=j, i1=SEG*P+j;
+      n.set(na.getX(i0)+na.getX(i1), na.getY(i0)+na.getY(i1), na.getZ(i0)+na.getZ(i1)).normalize();
+      na.setXYZ(i0,n.x,n.y,n.z); na.setXYZ(i1,n.x,n.y,n.z);
+    }
+  })();
+  body.add(part(domeGeo, toon(GREEN), 0.03));
+
+  // ---- Rolled lip around the dome
+  const lipGeo=new THREE.TorusGeometry(1.62, 0.38, 32, 140);
+  lipGeo.rotateX(Math.PI/2);
+  lipGeo.scale(1.13, 0.72, 1.0);
+  const lip=part(lipGeo, toon(LIP), 0.03);
+  lip.position.y=0.04;
+  body.add(lip);
+
+  // ---- Dark underside
+  const underGeo=new THREE.SphereGeometry(1, 72, 24, 0, Math.PI*2, Math.PI/2, Math.PI/2);
+  underGeo.scale(2.0, 1.2, 1.75);
+  const under=part(underGeo, toon(UNDER), 0.03);
+  under.position.y=-0.04;
+  body.add(under);
+
+  // ---- Curved stalk on top, with a small flare where it meets the head
+  const hornPts=[[0,1.18,-0.3],[-0.06,1.55,-0.38],[-0.2,1.9,-0.5],[-0.4,2.18,-0.62],[-0.6,2.36,-0.7]].map(p=>new V3(p[0],0.3+(p[1]-0.3)*1.22,p[2]));
+  const hornBase=hornPts[0].clone();
+  const hornGeo=taperTube(hornPts, t=>0.335+(0.1-0.335)*Math.pow(t,0.85)+0.2*Math.exp(-t*8), 90, 32);
+  hornGeo.translate(-hornBase.x,-hornBase.y,-hornBase.z);
+  const hornTipGeo=new THREE.SphereGeometry(0.1, 24, 16);
+  const hornPivot=new THREE.Group();
+  hornPivot.position.copy(hornBase);
+  hornPivot.add(part(hornGeo, toon(GREEN), 0.028));
+  const tip=part(hornTipGeo, toon(GREEN), 0.028);
+  tip.position.copy(hornGeo.userData.end).sub(hornBase);
+  hornPivot.add(tip);
+  body.add(hornPivot);
+
+  // ---- One leg, flaring slightly where it leaves the bowl
+  const legPts=[[0,-1.0,0.15],[0,-1.3,0.15],[0,-1.6,0.15],[0,-1.83,0.15]].map(p=>new V3(p[0],p[1],p[2]));
+  const legBase=legPts[0].clone();
+  const legGeo=taperTube(legPts, t=>0.22-0.03*t+0.13*Math.exp(-t*9), 48, 28);
+  legGeo.translate(-legBase.x,-legBase.y,-legBase.z);
+  const legPivot=new THREE.Group();
+  legPivot.position.copy(legBase);
+  legPivot.add(part(legGeo, toon(GREEN), 0.028));
+  const foot=part(new THREE.SphereGeometry(0.19, 28, 18), toon(GREEN), 0.028);
+  foot.position.copy(legGeo.userData.end).sub(legBase);
+  legPivot.add(foot);
+  body.add(legPivot);
+
+  // ---- Eyes, placed by casting rays onto the dome surface
+  const probe=new THREE.Mesh(domeGeo, new THREE.MeshBasicMaterial());
+  probe.updateMatrixWorld(true);
+  const ray=new THREE.Raycaster();
+  function surf(x,y){
+    ray.set(new V3(x,y,5), new V3(0,0,-1));
+    const h=ray.intersectObject(probe)[0];
+    return h ? {p:h.point.clone(), n:h.face.normal.clone().normalize()} : {p:new V3(x,y,0.8), n:new V3(0,0,1)};
+  }
+  const EA=0.39, EB=0.575, EC=0.27;
+  const eyeGeo=new THREE.SphereGeometry(1, 48, 32); eyeGeo.scale(EA,EB,EC);
+  const pupilGeo=new THREE.SphereGeometry(1, 28, 20); pupilGeo.scale(0.2,0.25,0.12);
+  const eyeMat=toon(EYE), pupilMat=toon(PUPIL), browMat=new THREE.MeshBasicMaterial({color:0x121210});
+  const browGeo=taperTube(
+    [[-0.15,0.71,0.2],[-0.07,0.79,0.27],[0.05,0.8,0.27],[0.14,0.73,0.2]].map(p=>new V3(p[0],p[1],p[2])),
+    t=>0.045-0.022*t, 32, 16);
+  const browCapA=new THREE.SphereGeometry(0.045,16,12), browCapB=new THREE.SphereGeometry(0.023,12,10);
+
+  const eyes=[];
+  function makeEye(sx, sy, roll, gaze){
+    const s=surf(sx,sy);
+    const q=new THREE.Quaternion().setFromUnitVectors(new V3(0,0,1), s.n);
+    q.premultiply(new THREE.Quaternion().setFromAxisAngle(s.n, roll));
+    const anchor=new THREE.Group();
+    anchor.position.copy(s.p).addScaledVector(s.n, -0.12);
+    anchor.quaternion.copy(q);
+    body.add(anchor);
+
+    const lid=new THREE.Group(); anchor.add(lid);  // blinks
+    lid.add(part(eyeGeo, eyeMat, 0.026));
+    const pupil=part(pupilGeo, pupilMat, 0.014);
+    lid.add(pupil);
+    // round white glint on the top right of the pupil
+    const glint=new THREE.Mesh(new THREE.SphereGeometry(0.048, 20, 14), new THREE.MeshBasicMaterial({color:0xffffff}));
+    glint.scale.z=0.5;
+    glint.position.set(0.08, 0.1, 0.1);
+    pupil.add(glint);
+
+    const brow=new THREE.Group(); anchor.add(brow);
+    brow.add(new THREE.Mesh(browGeo, browMat));
+    const ca=new THREE.Mesh(browCapA, browMat); ca.position.copy(browGeo.userData.start); brow.add(ca);
+    const cb=new THREE.Mesh(browCapB, browMat); cb.position.copy(browGeo.userData.end); brow.add(cb);
+
+    const e={anchor, lid, pupil, brow, rest:gaze.slice(), gaze:gaze.slice()};
+    eyes.push(e);
+    placePupil(e);
+    return e;
+  }
+  const _n=new V3();
+  function placePupil(e){
+    let [u,v]=e.gaze; const L=Math.hypot(u,v); if(L>1){u/=L; v/=L;}
+    const x=u*EA*0.55, y=v*EB*0.55;
+    const z=EC*Math.sqrt(Math.max(0, 1-(x/EA)**2-(y/EB)**2));
+    _n.set(x/(EA*EA), y/(EB*EB), z/(EC*EC)).normalize();
+    e.pupil.position.set(x,y,z).addScaledVector(_n, 0.035);
+    e.pupil.quaternion.setFromUnitVectors(new V3(0,0,1), _n);
+  }
+  makeEye(-0.47, 1.1, 0, [0,0]);
+  makeEye(0.49, 1.1, 0, [0,0]);
+
+  // ---- Mouth: a small smile resting on the dome below the eyes
+  (function(){
+    const s=surf(0.02, 0.56);
+    const anchor=new THREE.Group();
+    anchor.position.copy(s.p);
+    anchor.quaternion.setFromUnitVectors(new V3(0,0,1), s.n);
+    const pts=[[-0.24,0.05,-0.01],[-0.12,-0.02,0.03],[0.0,-0.045,0.045],[0.12,-0.02,0.03],[0.24,0.05,-0.01]].map(p=>new V3(p[0],p[1],p[2]));
+    const geo=taperTube(pts, t=>0.032-0.01*Math.abs(t-0.5), 40, 14);
+    anchor.add(new THREE.Mesh(geo, browMat));
+    [pts[0],pts[4]].forEach(p=>{
+      const c=new THREE.Mesh(new THREE.SphereGeometry(0.027,12,10), browMat);
+      c.position.copy(p); anchor.add(c);
+    });
+    body.add(anchor);
+  })();
+
+  // ---- Floating cartoon gloves: palm, thumb, three fingers and a cuff, not attached to the body
+  function makeHand(){
+    const g=new THREE.Group();
+    const mat=toon(0xE6E8E9), W=0.075;
+    const palmGeo=new THREE.SphereGeometry(1, 40, 28); palmGeo.scale(0.46, 0.4, 0.25);
+    g.add(part(palmGeo, mat, W));
+    function digit(pts, r0, r1){
+      const geo=taperTube(pts.map(p=>new V3(p[0],p[1],p[2])), t=>r0+(r1-r0)*t, 40, 20);
+      g.add(part(geo, mat, W));
+      const cap=part(new THREE.SphereGeometry(r1, 20, 14), mat, W);
+      cap.position.copy(geo.userData.end); g.add(cap);
+    }
+    digit([[0.12,0.18,0],[0.2,0.45,0],[0.17,0.78,0]], 0.17, 0.13);        // thumb, standing up
+    digit([[-0.18,0.14,0],[-0.42,0.3,0],[-0.66,0.42,0]], 0.14, 0.105);    // upper finger
+    digit([[-0.2,0.0,0],[-0.5,0.05,0],[-0.8,0.06,0]], 0.14, 0.105);       // middle finger
+    digit([[-0.18,-0.14,0],[-0.46,-0.2,0],[-0.74,-0.26,0]], 0.14, 0.105); // lower finger
+    // cuff at the wrist
+    const dir=new V3(0.62,-0.78,0).normalize();
+    const cuffGeo=new THREE.CylinderGeometry(0.27, 0.31, 0.22, 36, 1, false);
+    const cuff=part(cuffGeo, toon(0xEEF0F0), W);
+    cuff.quaternion.setFromUnitVectors(new V3(0,1,0), dir);
+    cuff.position.copy(dir).multiplyScalar(0.5);
+    g.add(cuff);
+    return g;
+  }
+  const hands=[];
+  [[-1, -3.45, 0.8, 0.2], [1, 3.45, 1.0, 2.4]].forEach(([side, x, y, phase])=>{
+    const h=makeHand();
+    h.scale.set(-side*0.95, 0.95, 0.95);   // the right-hand glove is a mirror of the reference
+    h.position.set(x, y, 0.5);
+    scene.add(h);
+    hands.push({g:h, side, bx:x, by:y, phase});
+  });
+  let lagY=0;
+
+  // ---- Soft ground shadow
+  const sc=document.createElement('canvas'); sc.width=sc.height=128;
+  const cx=sc.getContext('2d');
+  const gr=cx.createRadialGradient(64,64,0,64,64,64);
+  gr.addColorStop(0,'rgba(20,28,8,0.42)'); gr.addColorStop(0.55,'rgba(20,28,8,0.16)'); gr.addColorStop(1,'rgba(20,28,8,0)');
+  cx.fillStyle=gr; cx.fillRect(0,0,128,128);
+  const shadow=new THREE.Mesh(new THREE.PlaneGeometry(4.8,3.6), new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(sc), transparent:true, depthWrite:false}));
+  shadow.rotation.x=-Math.PI/2; shadow.position.y=-2.1;
+  scene.add(shadow);
+
+  // ---- Framing
+  function homeDistance(){
+    const a=camera.aspect, t=Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
+    return Math.max(13.4, 9.6/(2*t*a));
+  }
+  function resetView(){
+    camera.position.copy(TARGET).addScaledVector(HOME_DIR, homeDistance());
+    controls.target.copy(TARGET);
+    controls.update();
+  }
+  function resize(){
+    const w=stage.clientWidth||window.innerWidth, h=stage.clientHeight||window.innerHeight;
+    renderer.setSize(w,h,false);
+    camera.aspect=w/h; camera.updateProjectionMatrix();
+    const d=homeDistance();
+    controls.minDistance=d*0.5; controls.maxDistance=d*1.7;
+    if(!touched) resetView();
+  }
+  let touched=false;
+  controls.addEventListener('start', ()=>{ touched=true; });
+  resize(); resetView();
+  window.addEventListener('resize', resize);
+
+  // ---- Interaction
+  const pointer={x:0,y:0,active:false,last:0};
+  renderer.domElement.addEventListener('pointermove', ev=>{
+    const r=renderer.domElement.getBoundingClientRect();
+    pointer.x=((ev.clientX-r.left)/r.width)*2-1;
+    pointer.y=-((ev.clientY-r.top)/r.height)*2+1;
+    pointer.active=true; pointer.last=performance.now();
+  });
+  renderer.domElement.addEventListener('pointerleave', ()=>{ pointer.active=false; });
+
+  let hopStart=-10;
+  const clock=new THREE.Clock();
+  function hop(){ if(clock.getElapsedTime()-hopStart>0.75) hopStart=clock.getElapsedTime(); }
+  let down=null;
+  renderer.domElement.addEventListener('pointerdown', ev=>{ down={x:ev.clientX,y:ev.clientY}; });
+  renderer.domElement.addEventListener('pointerup', ev=>{
+    if(!down) return;
+    const moved=Math.hypot(ev.clientX-down.x, ev.clientY-down.y); down=null;
+    if(moved>6) return;
+    const r=renderer.domElement.getBoundingClientRect();
+    const ndc=new THREE.Vector2(((ev.clientX-r.left)/r.width)*2-1, -((ev.clientY-r.top)/r.height)*2+1);
+    ray.setFromCamera(ndc, camera);
+    if(ray.intersectObjects(hitMeshes, false).length) hop();
+  });
+
+  const spinBtn=document.getElementById('btn-spin');
+  spinBtn.addEventListener('click', ()=>{
+    controls.autoRotate=!controls.autoRotate;
+    spinBtn.setAttribute('aria-pressed', String(controls.autoRotate));
+  });
+  document.getElementById('btn-hop').addEventListener('click', hop);
+  document.getElementById('btn-reset').addEventListener('click', ()=>{ touched=false; resetView(); });
+
+  // ---- Animate
+  let nextBlink=1.8, blinkAt=-1;
+  const look=new V3(), local=new V3();
+  const amp=reduceMotion?0.25:1;
+
+  function frame(){
+    const t=clock.getElapsedTime();
+
+    // hop with squash and stretch
+    const h=(t-hopStart)/0.75;
+    let hy=0, sq=0;
+    if(h>=0 && h<1){
+      hy=Math.sin(h*Math.PI)*0.9;
+      sq = h<0.12 ? -Math.sin(h/0.12*Math.PI)*0.12 : Math.sin((h-0.12)/0.88*Math.PI)*0.08*(1-h);
+    }
+    root.position.y=Math.sin(t*1.5)*0.09*amp+hy;
+    root.position.x=Math.sin(t*0.5)*0.06*amp;
+
+    // floaty gloves: slow drift and tilt, trailing a beat behind the body's hops
+    lagY+=(root.position.y-lagY)*0.06;
+    hands.forEach(H=>{
+      const p=H.phase, s=H.side;
+      H.g.position.set(
+        H.bx + Math.sin(t*0.9+p)*0.07*amp,
+        H.by + Math.sin(t*1.25+p)*0.17*amp + Math.sin(t*0.6+p*2)*0.07*amp + lagY*0.9,
+        0.5 + Math.sin(t*0.8+p)*0.12*amp
+      );
+      H.g.rotation.set(Math.sin(t*0.9+p)*0.1*amp, Math.sin(t*0.7+p)*0.18*amp, s*(-0.22)+Math.sin(t*1.1+p)*0.12*amp);
+    });
+    root.scale.set(1-sq*0.6, 1+sq, 1-sq*0.6);
+    body.rotation.z=0.14+Math.sin(t*0.8)*0.04*amp;
+    body.rotation.x=0.1+Math.sin(t*0.6+1)*0.03*amp;
+    hornPivot.rotation.z=Math.sin(t*2.1)*0.07*amp - hy*0.12;
+    hornPivot.rotation.x=Math.sin(t*1.7+0.5)*0.04*amp;
+    legPivot.rotation.z=Math.sin(t*2.4+1.3)*0.05*amp + (h>=0&&h<1 ? Math.sin(h*Math.PI*2)*0.25 : 0);
+    const lift=root.position.y;
+    shadow.scale.setScalar(1-lift*0.35);
+    shadow.material.opacity=Math.max(0.35, 1-lift*0.7);
+
+    // brows pop up on a hop
+    eyes.forEach(e=>{ e.brow.position.y=(h>=0&&h<1?Math.sin(h*Math.PI)*0.12:0); });
+
+    // blink
+    if(t>nextBlink){ blinkAt=t; nextBlink=t+2.4+Math.random()*3.2; }
+    const b=(t-blinkAt)/0.16;
+    const lidY=(b>=0&&b<1)?Math.max(0.08, Math.abs(Math.cos(b*Math.PI))):1;
+    eyes.forEach(e=>{ e.lid.scale.y=lidY; });
+
+    // Both eyes always look in parallel (never converging, so never cross-eyed):
+    // at the pointer while it moves over the model, otherwise straight out at the viewer.
+    root.updateMatrixWorld(true);
+    const following=false; // cursor-following is turned off: the eyes always look out at the viewer
+    if(following){
+      look.set(pointer.x, pointer.y, 0.5).unproject(camera).sub(camera.position).normalize();
+    } else {
+      look.copy(camera.position).sub(controls.target).normalize();
+    }
+    eyes.forEach(e=>{
+      e.anchor.getWorldPosition(local).addScaledVector(look, 60);
+      e.anchor.worldToLocal(local).normalize();
+      const tu=local.x*1.8, tv=local.y*1.8;
+      e.gaze[0]+=(tu-e.gaze[0])*0.12;
+      e.gaze[1]+=(tv-e.gaze[1])*0.12;
+      placePupil(e);
+    });
+
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
