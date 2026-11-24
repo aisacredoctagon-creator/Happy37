@@ -73,7 +73,7 @@ export const CONFIG = {
 
     s1_bg: 'assets/scene1/bg-stasiun.jpg',
 
-    s2_view: 'assets/scene2/view-landmark-surabaya.jpg',
+    s2_parallax: 'assets/scene2/parallax/', // folder sprite parallax Surabaya (hasil bedah dari Figma)
     s2_window: 'assets/scene2/jendela-kereta.png',
 
     s3_bg: 'assets/scene3/bg-jalan-surabaya.jpg',

@@ -303,6 +303,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .scene { position: absolute; inset: 0; overflow: hidden; background: #2a1c12; }
 
 /* ---------- Scene 1: Tiket ---------- */
+/* Panorama 3:1 dipotong cover → geser fokus ke kanan supaya Monas tetap terlihat */
+.s1 .slot.bg > img { object-position: 85% 50%; }
 .s1-gasing { position: absolute; left: 11%; bottom: 4%; height: 64%; }
 .s1-ticket-wrap {
   position: absolute; right: 6%; top: 50%;
@@ -365,16 +367,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 14px solid #e2d6bd;
   box-shadow: inset 0 0 40px rgba(0, 0, 0, .35), 0 20px 40px rgba(0, 0, 0, .35);
 }
-.s2-outside { position: absolute; inset: 0; background: linear-gradient(#9fd3e8, #f7e2b5); }
-.s2-track { display: flex; width: 200%; height: 100%; }
-.s2-view { width: 50%; height: 100%; flex: none; }
-.s2-view.is-placeholder { --tint: #a9cfd9; border-radius: 0; border-width: 0 2px 0 0; }
-.s2-poles {
-  position: absolute; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(90deg, transparent 0 260px, rgba(40, 30, 20, .55) 260px 268px, transparent 268px 520px);
-  animation: poles 1.2s linear infinite;
+.s2-outside { position: absolute; inset: 0; container-type: size; overflow: hidden; background: #5bbcff; }
+/* Panggung parallax: 1 unit desain (referensi 2172×724) = --u. Tinggi jendela = 724 unit. */
+.s2-stage { --u: calc(100cqh / 724); position: absolute; inset: 0; overflow: hidden; }
+.s2-sky { position: absolute; inset: 0; background: linear-gradient(#4db4fb 0%, #6cc4ff 55%, #a5dcff 78%, #c9ecff 100%); }
+.s2-layer { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+.s2-strip {
+  display: flex; height: 100%; will-change: transform;
+  animation: s2-scroll linear infinite; animation-play-state: paused;
 }
-@keyframes poles { to { background-position: -520px 0; } }
+.s2.is-running .s2-strip { animation-play-state: running; }
+/* geser tepat 2 chunk ([A][A↔]) lalu ulang → mulus karena tepi cermin selalu cocok */
+@keyframes s2-scroll { to { transform: translate3d(calc(var(--u) * var(--period) * -1), 0, 0); } }
+.s2-chunk { position: relative; flex: none; height: 100%; }
+.s2-chunk.is-mirror { transform: scaleX(-1); }
+.s2-chunk img, .s2-cloud { position: absolute; max-width: none; user-select: none; }
 .s2-glare { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, .25) 40%, transparent 50%); pointer-events: none; }
 .s2-gasing { position: absolute; left: 10%; bottom: 0; height: 52%; }
 
@@ -534,7 +541,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gasing > img, .s2-poles, .hotspot::after { animation: none; }
+  .gasing > img, .s2-strip, .hotspot::after { animation: none; }
 }
 
 /* ---------------- Debug panel (?debug) ---------------- */

@@ -29,7 +29,7 @@ Lalu buka http://localhost:5173
 | `js/config.js` | **Edit di sini**: nama, data tiket, kode koper (default 1‑2‑3‑4), narasi, 9 bagian kereta + teksnya, path aset |
 | `js/main.js` | Pengatur alur scene, HUD, transisi, catatan, confetti |
 | `js/debug.js` | Panel debug untuk loncat scene (aktif dengan `?debug`) |
-| `js/scenes2d.js` | Scene 2D: 1–2 (+ scene 3, 4 dan 11–12 versi 2D, hanya sebagai cadangan kalau WebGL / dunia 3D gagal) |
+| `js/scenes2d.js` | Scene 2D: 1–2 (+ scene 3, 4 dan 11–12 versi 2D, hanya sebagai cadangan kalau WebGL / dunia 3D gagal). **Scene 2** = pemandangan parallax 9 lapisan (awan → skyline jauh → gedung → pepohonan → landmark → semak → tembok → rel → kabel/tiang) di `buildSurabayaParallax()`. Posisi sprite ditulis dalam unit desain 2172×724 (referensi Figma) dan diskalakan ke tinggi jendela lewat `--u`. Tiap lapisan = potongan + **salinan cermin** (`[A][A↔][A][A↔]` digeser 2 potongan) sehingga loop mulus tanpa pola ulang yang persis. Kecepatan per lapisan = argumen ke-3 `s2Layer()` (unit/detik) |
 | `js/street3d.js` | **Scene 3 (3D)**: jalan Surabaya sore hari — deretan ruko kolonial, spanduk "Selamat Datang di SURABAYA", umbul-umbul merah-putih, pohon & lampu jalan, **gerobak soto Ambengan** (uap mengepul, etalase mangkuk) dan **toko antik** dengan pintu terbuka yang bercahaya. Gasing (yang menjinjing tas tenis, `bag: true`) adalah elemen DOM yang diproyeksikan ke trotoar 3D (cara yang sama dengan toko). Konstanta di atas file (`CART`, `SHOP`, `STAND`, `EAT_AT`, `VIEWS`) mengatur posisi dan sudut kamera; `VIEWS.*.p` = variasi layar portrait. Dibangun malas (lazy) saat scene 3 pertama dibuka |
 | `js/shop3d.js` | **Scene 4 dan 11–12 (3D)**: interior toko antik — rak, jam besar, gramofon, lampu gantung, karpet, etalase kaca berisi koper, dan **TV CRT besar di atas kabinet** (layar cembung, garis scan, antena, statis → video). Konstanta di bagian atas file (`CASE`, `WALK_FROM/WALK_TO`, `TV_POS/TV_ROT`, `TV_PATH`, `BAG_OFF`, `VIEWS`) mengatur posisi etalase, TV, jalur Gasing, dan sudut kamera |
 | `js/world3d.js` | Scene 3D: 5–10 (koper, gembok, bagian kereta, cetakan, kereta); pemilik renderer & **koper**. Koper itu diletakkan *di dalam* scene toko (`shop3d.js`, skala `CASE_SCALE`) sehingga scene 4 → 5 satu ruang yang sama dan toko jadi latar scene 5–10. Kamera dihitung dalam satuan lokal koper (`applyCam`). Kalau toko gagal dibangun → pakai scene mandiri (meja + gradien) |
@@ -64,7 +64,7 @@ Cukup taruh file dengan nama berikut — website otomatis memakainya. Yang belum
 |---|---|
 | `assets/characters/gasing.png` | Karakter 2D lama. Sekarang hanya **cadangan** kalau WebGL gagal + ikon tab |
 | `assets/scene1/bg-stasiun.jpg` | Background stasiun |
-| `assets/scene2/view-landmark-surabaya.jpg` | Pemandangan dari jendela (lebar, ujung kiri-kanan nyambung untuk loop) |
+| `assets/scene2/parallax/*.png` | **Sprite parallax** pemandangan Surabaya dari jendela kereta (gedung, landmark Suro & Boyo / Tugu Pahlawan / gedung merah, pepohonan, tembok, rel, kabel & tiang). Hasil bedah aset dari Figma; semuanya PNG transparan |
 | `assets/scene2/jendela-kereta.png` | Frame jendela transparan (opsional) |
 | `assets/scene3/bg-jalan-surabaya.jpg` | Background jalan/gang — hanya versi 2D cadangan (scene 3 3D dibangun prosedural) |
 | `assets/scene3/gerobak-soto-ambengan.png` | Gerobak soto — hanya versi 2D cadangan |

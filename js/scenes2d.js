@@ -69,29 +69,136 @@ function scene1(ctx) {
 /* -------------------------------------------------------------
    SCENE 2 — Lihat landmark dari jendela kereta
 ------------------------------------------------------------- */
-function scene2(ctx) {
-  const track = h('div', { class: 's2-track' },
-    slot({ src: A.s2_view, label: 'View landmark Surabaya (lebar, bisa di-loop)', className: 's2-view', fit: 'cover' }),
-    slot({ src: A.s2_view, label: 'View landmark Surabaya (lebar, bisa di-loop)', className: 's2-view', fit: 'cover' }));
+/* Pemandangan Surabaya dari jendela kereta — parallax berlapis.
+   Semua posisi/ukuran ditulis dalam "unit" desain 2172×724 (referensi Figma), lalu diskalakan ke
+   tinggi jendela lewat --u (css). Tiap lapisan = potongan (chunk) + salinan cerminnya ("mirror trick"):
+   [A][A↔][A][A↔] digeser tepat 2 chunk lalu diulang → ujung kiri/kanan selalu nyambung, tanpa
+   pola yang terulang persis dan tanpa sambungan terlihat. */
+const S2_DIR = A.s2_parallax;
+const S2_H = 724; // tinggi unit desain
+const S2_NAT = { // ukuran asli tiap sprite (px)
+  'bld-glass-tower': [179, 239], 'bld-cream-a': [137, 159], 'bld-blue-a': [149, 132], 'bld-cream-b': [191, 166],
+  'bld-spire': [58, 199], 'bld-grey': [165, 160], 'bld-white': [151, 160], 'bld-beige': [131, 160], 'bld-blue-b': [116, 160],
+  'lm-suroboyo': [228, 332], 'lm-tugu-pahlawan': [272, 348], 'lm-gedung': [549, 259],
+  'tree-big': [303, 273], 'tree-small': [161, 134], 'bush-wide': [334, 86], 'bush-small': [135, 42],
+  treeline: [2120, 210], wall: [2106, 66], tracks: [2106, 254],
+  'wires-band': [1760, 182], 'pole-lamp': [72, 556], 'pole-power': [130, 694],
+};
+const u = (n) => `calc(var(--u) * ${+n.toFixed(2)})`;
 
+// sprite: x = tepi kiri, y = tepi BAWAH (unit desain), s = skala terhadap ukuran asli
+function s2Sprite(name, x, y, s = 1, extra = '') {
+  const [nw, nh] = S2_NAT[name];
+  const img = h('img', {
+    src: `${S2_DIR}${name}.png`, alt: '', draggable: 'false', decoding: 'async',
+    style: `left:${u(x)};top:${u(y - nh * s)};width:${u(nw * s)};height:${u(nh * s)};${extra}`,
+  });
+  return img;
+}
+
+function s2Cloud(x, y, w) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 60');
+  svg.setAttribute('class', 's2-cloud');
+  svg.style.cssText = `left:${u(x)};top:${u(y)};width:${u(w)};height:${u(w * 0.3)}`;
+  svg.innerHTML =
+    '<g fill="#fff"><circle cx="45" cy="38" r="20"/><circle cx="80" cy="30" r="28"/><circle cx="122" cy="34" r="24"/>' +
+    '<circle cx="155" cy="42" r="16"/><circle cx="24" cy="46" r="12"/><rect x="8" y="42" width="184" height="16" rx="8"/></g>' +
+    '<rect x="8" y="50" width="184" height="8" rx="4" fill="#d6eafb"/>';
+  return svg;
+}
+
+/**
+ * @param {string} cls   nama lapisan
+ * @param {number} W     lebar satu chunk (unit desain)
+ * @param {number} speed kecepatan (unit desain / detik)
+ * @param {Array<Node|Function>} items
+ */
+function s2Layer(cls, W, speed, items) {
+  const chunk = (mirror) => h('div', { class: `s2-chunk${mirror ? ' is-mirror' : ''}`, style: `width:${u(W)}` },
+    ...items.map((it) => (typeof it === 'function' ? it() : it.cloneNode(true))));
+  return h('div', { class: `s2-layer s2-l-${cls}` },
+    h('div', { class: 's2-strip', style: `--period:${2 * W};animation-duration:${((2 * W) / speed).toFixed(1)}s;width:${u(4 * W)}` },
+      chunk(false), chunk(true), chunk(false), chunk(true)));
+}
+
+function buildSurabayaParallax() {
+  const sp = (...a) => () => s2Sprite(...a);
+  const far = 'opacity:.5;filter:saturate(.55) brightness(1.18) hue-rotate(-6deg);';
+
+  // 1. awan (paling lambat)
+  const clouds = s2Layer('clouds', 2172, 7, [
+    () => s2Cloud(402, 62, 316), () => s2Cloud(12, 178, 220), () => s2Cloud(684, 222, 200),
+    () => s2Cloud(1526, 216, 212), () => s2Cloud(1685, 64, 218), () => s2Cloud(1930, 178, 215),
+    () => s2Cloud(1160, 120, 150),
+  ]);
+
+  // 2. skyline jauh (kabur, kecil)
+  const skyline = s2Layer('far', 2172, 20, [
+    sp('bld-blue-a', 190, 420, 0.62, far), sp('bld-cream-b', 420, 420, 0.55, far), sp('bld-glass-tower', 690, 420, 0.46, far),
+    sp('bld-grey', 900, 420, 0.6, far), sp('bld-spire', 1110, 420, 0.8, far), sp('bld-white', 1230, 420, 0.56, far),
+    sp('bld-blue-b', 1470, 420, 0.6, far), sp('bld-beige', 1700, 420, 0.6, far), sp('bld-cream-a', 1900, 420, 0.55, far),
+  ]);
+
+  // 3. gedung perkantoran (di belakang pepohonan). Jauhi tepi chunk supaya pasangan cermin tidak terlalu mencolok
+  const mid = s2Layer('mid', 2172, 48, [
+    sp('bld-blue-b', 200, 445, 0.66), sp('bld-grey', 300, 445, 0.45), sp('bld-blue-a', 610, 445, 0.66),
+    sp('bld-glass-tower', 790, 445, 0.58), sp('bld-beige', 905, 445, 0.5), sp('bld-cream-b', 1330, 445, 0.58),
+    sp('bld-spire', 1490, 445, 0.62), sp('bld-white', 1700, 445, 0.62), sp('bld-cream-a', 1850, 445, 0.5),
+  ]);
+
+  // 4. pepohonan di belakang tembok (panjang, tanpa pola ulang berkat cermin). 76 px teratas sprite kosong.
+  const treeline = s2Layer('trees', 2120, 100, [sp('treeline', 0, 502, 1)]);
+
+  // 5. landmark Surabaya (Suro & Boyo, Tugu Pahlawan, gedung merah) berdiri di depan pepohonan.
+  //    Tepi chunk dikosongkan: pasangan cermin di sambungan tidak menampilkan landmark yang sama berdampingan.
+  const landmarks = s2Layer('landmarks', 2600, 135, [
+    sp('lm-gedung', 330, 482, 0.56), sp('lm-suroboyo', 1250, 490, 0.72), sp('lm-tugu-pahlawan', 2000, 490, 0.75),
+  ]);
+
+  // 6. pohon & semak tunggal di depan barisan pohon
+  const shrubs = s2Layer('shrubs', 2172, 190, [
+    sp('tree-big', 160, 500, 0.55), sp('bush-wide', 470, 500, 0.62), sp('tree-small', 820, 500, 0.62),
+    sp('tree-big', 1200, 500, 0.5), sp('bush-small', 1560, 500, 0.8), sp('bush-wide', 1740, 500, 0.55),
+  ]);
+
+  // 7. tembok & 8. rel (sama-sama panjang → cermin). Sprite rel: 36 baris teratas kosong → digeser naik.
+  const wall = s2Layer('wall', 1895, 280, [sp('wall', 0, 533, 0.9)]);
+  const tracks = s2Layer('tracks', 1895, 360, [sp('tracks', 0, 726, 0.9)]);
+
+  // 8. kabel + tiang (paling dekat → paling cepat) + semak depan
+  //    Kabel + tiang digeser turun bersama (POLE_DY) supaya dasar tiang tersembunyi di bawah bingkai jendela
+  //    dan kabel tetap tersambung ke tiang.
+  const POLE_DY = 72;
+  const power = s2Layer('power', 1760, 300, [
+    () => h('img', { src: `${S2_DIR}wires-band.png`, alt: '', draggable: 'false', decoding: 'async', style: `left:0;top:${u(118 + POLE_DY)};width:${u(1760)};height:${u(182)}` }),
+    sp('pole-lamp', 400, 704 + POLE_DY, 1), sp('pole-power', 1250, 706 + POLE_DY, 1),
+    sp('bush-wide', 980, 742, 1.15), sp('bush-small', 70, 736, 1.1),
+  ]);
+
+  return h('div', { class: 's2-stage' }, h('div', { class: 's2-sky' }),
+    clouds, skyline, mid, treeline, landmarks, shrubs, wall, tracks, power);
+}
+
+function scene2(ctx) {
   const el = h('section', { class: 'scene s2' },
     h('div', { class: 's2-wall' }),
     h('div', { class: 's2-window' },
-      h('div', { class: 's2-outside' }, track, h('div', { class: 's2-poles' })),
+      h('div', { class: 's2-outside' }, buildSurabayaParallax()),
       h('div', { class: 's2-glare' })),
     slot({ src: A.s2_window, label: 'Frame jendela (opsional)', className: 's2-frame overlay-optional', fit: 'fill' }),
     gasing('Gasing lihat jendela', 's2-gasing', 0.3));
 
-  let loop;
   return {
     el,
     enter() {
-      loop = gsap.to(track, { xPercent: -50, duration: 14, ease: 'none', repeat: -1 });
+      el.classList.add('is-running'); // mulai menggulir semua lapisan parallax
       gsap.to(el.querySelector('.s2-window'), { y: 2, duration: 0.18, yoyo: true, repeat: -1, ease: 'sine.inOut' });
       gsap.from(el.querySelector('.s2-gasing'), { y: 60, opacity: 0, duration: 0.8, delay: 0.3 });
       gsap.delayedCall(2.2, () => ctx.showAction('Turun di Surabaya →', () => ctx.next()));
     },
-    exit() { loop?.kill(); gsap.killTweensOf(el.querySelector('.s2-window')); },
+    exit() { el.classList.remove('is-running'); gsap.killTweensOf(el.querySelector('.s2-window')); },
   };
 }
 
