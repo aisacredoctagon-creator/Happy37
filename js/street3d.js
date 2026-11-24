@@ -300,9 +300,9 @@ function shopFacadeTexture(W, H) {
 /* ============================================================
    Model: bangunan, gerobak, pohon, tiang
 ============================================================ */
-function buildHouse({ w, h, d = 5, floors = 2, cols = 3, color, trim, shutter, seed, balcony = false, awning = null, ac = false, arch = false }) {
+function buildHouse({ w, h, d = 5, floors = 2, cols = 3, color, trim, shutter, seed, balcony = false, awning = null, ac = false, arch = false, tex = null }) {
   const g = new THREE.Group();
-  const tex = facadeTexture({ w, h, floors, cols, color, trim, shutter, seed, arch });
+  tex ??= facadeTexture({ w, h, floors, cols, color, trim, shutter, seed, arch });
   const front = std(0xffffff, { map: tex, roughness: 0.92, envMapIntensity: 0.2 });
   const side = std(new THREE.Color(color).multiplyScalar(0.78), { roughness: 0.95, envMapIntensity: 0.2 });
   const trimM = std(trim, { roughness: 0.8, envMapIntensity: 0.2 });
@@ -604,18 +604,43 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     anim.push((t) => { banner.rotation.x = Math.sin(t * 0.9) * 0.015; });
   }
 
-  // deretan bangunan jauh (kabur di balik kabut)
+  // ruko di celah tepat di belakang gerobak soto (antara deretan kiri dan toko antik)
+  {
+    const gapL = -2.08 + 0.08, gapR = SHOP.x - SHOP.w / 2 - 0.08;
+    const b = buildHouse({ w: gapR - gapL, h: 5.0, color: '#f1cba6', trim: '#fff6e4', shutter: '#3f6a8a', seed: 21, cols: 3, balcony: true });
+    b.position.set((gapL + gapR) / 2, 0, WALL_Z);
+    scene.add(b);
+  }
+
+  // dua lapis bangunan di belakang deretan ruko supaya tanah/cakrawala di kejauhan tidak terlihat
   {
     const r = rng(33);
+    const palette = [
+      { color: '#d9c9a6', trim: '#f6ecd2', shutter: '#6a5a45' },
+      { color: '#cfd8c2', trim: '#f2f0dc', shutter: '#55705e' },
+      { color: '#e3c7b3', trim: '#f8eddc', shutter: '#6b4a3c' },
+      { color: '#c4d2da', trim: '#f4f1e6', shutter: '#4a5f72' },
+    ];
+    // lapis tengah (tinggi 7–10 m): 4 varian tekstur dipakai bersama supaya hemat memori
+    const MID_H = [7, 9.5, 8, 10.5];
+    const midTex = MID_H.map((h, i) => facadeTexture({ w: 7, h, floors: Math.round(h / 3.2), cols: 3, ...palette[i], seed: 40 + i, ground: 'window' }));
+    for (let x = -62; x < 66; x += 6.4) {
+      const v = Math.floor(r() * 4);
+      const b = buildHouse({ w: 7, h: MID_H[v], d: 6, ...palette[v], seed: 40 + v, tex: midTex[v] });
+      b.position.set(x + (r() - 0.5) * 0.8, 0, WALL_Z - 8.2 - r() * 1.6);
+      b.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+      scene.add(b);
+    }
+    // lapis belakang: blok tinggi yang menutup langit rendah di balik kabut
     const cols = ['#c8c0a8', '#bfb59c', '#c9bda4', '#b9b8a6'];
-    for (let x = -42; x < 46; x += 7.5) {
-      const hh = 6 + r() * 7;
-      const m = mesh(new THREE.BoxGeometry(7, hh, 6), std(cols[Math.floor(r() * cols.length)], { roughness: 1, envMapIntensity: 0.1 }), { cast: false });
-      m.position.set(x + r() * 2, hh / 2, WALL_Z - 13 - r() * 4);
+    for (let x = -80; x < 86; x += 8.2) {
+      const hh = 11 + r() * 9;
+      const m = mesh(new THREE.BoxGeometry(9, hh, 7), std(cols[Math.floor(r() * cols.length)], { roughness: 1, envMapIntensity: 0.1 }), { cast: false });
+      m.position.set(x + r() * 2, hh / 2, WALL_Z - 20 - r() * 5);
       scene.add(m);
-      const rf = mesh(new THREE.CylinderGeometry(0.3, 4.6, 1.6, 4), std(0x9a5a3c, { roughness: 1, envMapIntensity: 0.1 }), { cast: false });
+      const rf = mesh(new THREE.CylinderGeometry(0.3, 5.2, 1.8, 4), std(0x9a5a3c, { roughness: 1, envMapIntensity: 0.1 }), { cast: false });
       rf.rotation.y = Math.PI / 4;
-      rf.position.set(m.position.x, hh + 0.8, m.position.z);
+      rf.position.set(m.position.x, hh + 0.9, m.position.z);
       scene.add(rf);
     }
   }

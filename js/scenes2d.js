@@ -184,10 +184,12 @@ function buildSurabayaParallax() {
 function scene2(ctx) {
   const el = h('section', { class: 'scene s2' },
     h('div', { class: 's2-wall' }),
-    h('div', { class: 's2-window' },
-      h('div', { class: 's2-outside' }, buildSurabayaParallax()),
-      h('div', { class: 's2-glare' })),
-    slot({ src: A.s2_window, label: 'Frame jendela (opsional)', className: 's2-frame overlay-optional', fit: 'fill' }),
+    // Interior kereta (PNG dengan jendela transparan): parallax Surabaya ada DI BELAKANG gambar ini
+    h('div', { class: 's2-room' },
+      h('div', { class: 's2-window' },
+        h('div', { class: 's2-outside' }, buildSurabayaParallax()),
+        h('div', { class: 's2-glare' })),
+      h('img', { class: 's2-room-img', src: A.s2_room, alt: 'Interior kereta', draggable: 'false' })),
     gasing('Gasing lihat jendela', 's2-gasing', 0.3));
 
   return {
