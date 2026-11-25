@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { gsap } from 'gsap';
 import { createGasing3D } from './gasing3d.js';
+import { buildSotoServer } from './server3d.js';
 import { CONFIG } from './config.js';
 import { rng, std, box, put, mesh, canvasTex, markerTexture, dotTexture } from './shop3d.js';
 
@@ -32,6 +33,9 @@ const ACTOR_H = 1.55, ACTOR_FOOT = 0.1;
 const START = { x: -9.8, z: 2.7 };
 const STAND = { x: -3.5, z: 1.95 };        // menunggu di sini sebelum gerobak diketuk
 const EAT_AT = { x: -2.1, z: 1.5 };        // berdiri di depan gerobak saat makan
+
+// Penjual soto: '3d' = model toon (server3d.js); '2d' = gambar assets/scene3/penjual-soto.png sebagai sprite
+const SERVER_STYLE = '3d';
 
 const VIEWS = {
   //        target (t)           arah kamera (dir)    lebar/tinggi yang harus muat; p = variasi layar portrait
@@ -187,6 +191,236 @@ function facadeTexture({ w, h, floors = 2, cols = 3, color, trim, shutter, glass
   });
 }
 
+/* ---------------- Toko bernama (scene 3): gambar assets/scene3/storefronts.webp ----------------
+   Satu lembar berisi 5 muka toko. Tiap toko dipotong dari lembar itu (latar putih dibuat
+   transparan), ditempel sebagai muka bangunan, lalu bagian-bagiannya diberi volume 3D:
+   lisplang atas (kotak menonjol + atap limas), papan nama timbul, dan kanopi miring +
+   rumbai bergerigi. Semua angka di STORE_ART = koordinat piksel di lembar gambar.
+     crop    = [x0, y0, x1, y1]  seluruh toko (y1 = garis tanah, lantai abu-abu di bawahnya dibuang)
+     wall    = [xKiri, xKanan]   lebar dinding (dipetakan ke lebar bangunan dalam meter)
+     cornice = [x0, y0, x1, y1]  lisplang paling atas
+     sign    = [x0, y0, x1, y1]  papan nama
+     awn     = [x0, yAtas, x1, yMulaiGerigi, yBawahGerigi]  kanopi belang                         */
+const STOREFRONT_SRC = 'assets/scene3/storefronts.webp';
+const STORE_ART = {
+  rawon: { crop: [13, 22, 467, 551], wall: [38, 439], cornice: [28, 22, 449, 58], sign: [56, 59, 421, 152], awn: [29, 306, 448, 337, 362], wallColor: '#f2d9bf', roof: 0x9a4b2c },
+  sate: { crop: [476, 22, 928, 551], wall: [497, 903], cornice: [486, 22, 914, 58], sign: [516, 59, 885, 152], awn: [490, 306, 912, 337, 361], wallColor: '#dde3cc', roof: 0xa8532f },
+  baso: { crop: [939, 22, 1392, 551], wall: [961, 1366], cornice: [950, 22, 1378, 58], sign: [980, 59, 1349, 152], awn: [954, 306, 1376, 337, 361], wallColor: '#f3e1cd', roof: 0x9c5536 },
+  wilson: { crop: [105, 588, 657, 1090], wall: [140, 630], cornice: [125, 588, 645, 623], sign: [165, 625, 606, 712], awn: [131, 847, 644, 881, 907], wallColor: '#f6e2c9', roof: 0xa8532f },
+  hoka: { crop: [677, 588, 1254, 1090], wall: [699, 1219], cornice: [684, 588, 1236, 624], sign: [725, 626, 1200, 712], awn: [690, 847, 1230, 881, 904], wallColor: '#cfe1ef', roof: 0x8e5a40 },
+};
+
+let storeSheet = null;                       // Promise<HTMLImageElement>, dimuat sekali
+function loadStoreSheet() {
+  storeSheet ??= new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = STOREFRONT_SRC;
+  });
+  return storeSheet;
+}
+
+/** Potong satu toko dari lembar → kanvas dengan latar putih transparan (flood fill dari tepi). */
+function keyStoreCrop(img, A, cv) {
+  const [x0, y0, x1, y1] = A.crop;
+  const w = cv.width, h = cv.height;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.clearRect(0, 0, w, h);
+  g.drawImage(img, x0, y0, w, h, 0, 0, w, h);
+  const id = g.getImageData(0, 0, w, h), d = id.data;
+  const white = (i) => d[i] > 236 && d[i + 1] > 236 && d[i + 2] > 236 && Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) < 14;
+  const seen = new Uint8Array(w * h);
+  const stack = [];
+  for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);   // baris atas & bawah
+  for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1);
+  while (stack.length) {
+    const p = stack.pop();
+    if (seen[p]) continue;
+    seen[p] = 1;
+    if (!white(p * 4)) continue;
+    d[p * 4 + 3] = 0;
+    const x = p % w, y = (p / w) | 0;
+    if (x > 0) stack.push(p - 1);
+    if (x < w - 1) stack.push(p + 1);
+    if (y > 0) stack.push(p - w);
+    if (y < h - 1) stack.push(p + w);
+  }
+  // kikis 1 px pinggiran terang (sisa anti-alias latar putih)
+  const clear = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const p = y * w + x, i = p * 4;
+    if (!d[i + 3]) continue;
+    if ((!d[i - 1] || !d[i + 7] || !d[i - w * 4 + 3] || !d[i + w * 4 + 3]) && d[i] + d[i + 1] + d[i + 2] > 640) clear.push(i);
+  }
+  for (const i of clear) d[i + 3] = 0;
+  g.putImageData(id, 0, 0);
+  return { g, d, w, h };
+}
+
+/** Bentuk rumbai bergerigi: tiap belang kanopi diberi ujung bawah setengah lingkaran. */
+function scallopMask(src, A, cv) {
+  const [ax0, , ax1, aMid, aBot] = A.awn;
+  const [cx0, cy0] = A.crop;
+  const w = cv.width, h = cv.height;
+  const yProbe = aMid - cy0 + 3;
+  // klasifikasi belang gelap / terang di satu baris tepat di bawah bagian miring
+  const lum = [];
+  for (let x = 0; x < w; x++) {
+    const i = (yProbe * src.w + (ax0 - cx0 + x)) * 4;
+    lum.push(src.d[i + 3] ? 0.3 * src.d[i] + 0.59 * src.d[i + 1] + 0.11 * src.d[i + 2] : -1);
+  }
+  const vals = lum.filter((v) => v >= 0);
+  const thr = (Math.min(...vals) + Math.max(...vals)) / 2;
+  const runs = [];
+  let s = -1, cls = null;
+  for (let x = 0; x <= w; x++) {
+    const c = x < w && lum[x] >= 0 ? lum[x] > thr : null;
+    if (c !== cls) { if (cls !== null && x - s >= 3) runs.push([s, x - 1]); s = x; cls = c; }
+  }
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, w, h);
+  g.drawImage(src.g.canvas, ax0 - cx0, aMid - cy0, w, h, 0, 0, w, h);
+  g.globalCompositeOperation = 'destination-in';     // simpan piksel hanya di dalam bentuk gerigi
+  g.fillStyle = '#000';
+  g.beginPath();
+  for (const [a, b] of runs) {
+    const r = (b - a + 1) / 2, ry = Math.min(r * 0.9, h * 0.75), cx = a + r;
+    g.moveTo(a - 0.5, 0); g.lineTo(b + 1.5, 0); g.lineTo(b + 1.5, h - ry);
+    g.ellipse(cx + 0.5, h - ry, r + 1, ry, 0, 0, Math.PI);
+    g.lineTo(a - 0.5, 0);
+  }
+  g.fill();
+  g.globalCompositeOperation = 'source-over';
+}
+
+/** Di muka dinding, kanopi & rumbai lukisan ditimpa bayangan di bawah kanopi (yang terlihat kini kanopi 3D). */
+function hidePaintedAwning(src, A) {
+  const [ax0, aTop, ax1, , aBot] = A.awn;
+  const [cx0, cy0] = A.crop;
+  const { g, w } = src;
+  const x0 = Math.max(0, ax0 - cx0), x1 = Math.min(w - 1, ax1 - cx0);
+  const yA = aTop - cy0, yB = aBot - cy0 + 2;
+  const id = g.getImageData(0, 0, w, src.h), d = id.data;
+  for (let x = x0; x <= x1; x++) {
+    const bi = ((yB + 2) * w + x) * 4;                     // warna tepat di bawah rumbai (bagian dalam bilik / dinding)
+    for (let y = yA; y <= yB; y++) {
+      const i = (y * w + x) * 4;
+      if (!d[i + 3]) continue;
+      const k = 0.55 + 0.3 * ((y - yA) / (yB - yA));       // makin ke atas makin gelap (bayangan kanopi)
+      d[i] = d[bi] * k; d[i + 1] = d[bi + 1] * k; d[i + 2] = d[bi + 2] * k;
+    }
+  }
+  g.putImageData(id, 0, 0);
+}
+
+function hipRoof(w, d, rise, color) {
+  const geo = new THREE.CylinderGeometry(0.16, 1, rise, 4, 1);
+  geo.rotateY(Math.PI / 4);
+  const roof = new THREE.Mesh(geo, std(color, { roughness: 0.85, flatShading: true, envMapIntensity: 0.2 }));
+  roof.scale.set(w * 0.7071, 1, d * 0.7071);
+  roof.castShadow = true;
+  return roof;
+}
+
+/**
+ * Toko bernama dari lembar gambar. `width` = lebar dinding (m); tinggi mengikuti proporsi gambar.
+ * Titik asal grup: tengah-bawah muka dinding (z = 0 → muka depan, bangunan ke arah -z).
+ */
+function buildStorefront(kind, width, { depth = 5 } = {}) {
+  const A = STORE_ART[kind];
+  const [cx0, cy0, cx1, cy1] = A.crop;
+  const s = width / (A.wall[1] - A.wall[0]);                    // meter per piksel
+  const midX = (A.wall[0] + A.wall[1]) / 2;
+  const X = (px) => (px - midX) * s, Y = (py) => (cy1 - py) * s;
+  const g = new THREE.Group();
+
+  // kanvas potongan (diisi setelah gambar termuat); semua tekstur bagian = klon dengan offset/repeat
+  const cw = cx1 - cx0, ch = cy1 - cy0;
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const base = new THREE.CanvasTexture(cv);
+  base.colorSpace = THREE.SRGBColorSpace; base.anisotropy = 8;
+  const texs = [base];
+  const sub = (x0, y0, x1, y1) => {
+    const t = base.clone();
+    t.repeat.set((x1 - x0) / cw, (y1 - y0) / ch);
+    t.offset.set((x0 - cx0) / cw, 1 - (y1 - cy0) / ch);
+    texs.push(t);
+    return t;
+  };
+  const cut = (map, o = {}) => std(0xffffff, { map, alphaTest: 0.5, roughness: 0.88, envMapIntensity: 0.2, ...o });
+
+  // badan bangunan (sisi & atap datar), warna dinding diambil dari gambar
+  const H = Y(A.cornice[3]) + 0.05;
+  const sideM = std(new THREE.Color(A.wallColor).multiplyScalar(0.8), { roughness: 0.95, envMapIntensity: 0.2 });
+  put(g, box(width, H, depth, sideM), 0, H / 2, -depth / 2);
+
+  // muka toko (gambar penuh, latar transparan) sedikit di depan dinding
+  const face = put(g, mesh(new THREE.PlaneGeometry(cw * s, ch * s), cut(base), { cast: false }), X((cx0 + cx1) / 2), Y((cy0 + cy1) / 2), 0.012);
+  face.renderOrder = 1;
+
+  // lisplang atas: kotak menonjol, muka depannya = potongan lisplang dari gambar
+  const [kx0, ky0, kx1, ky1] = A.cornice;
+  const trimM = std(new THREE.Color(A.wallColor).lerp(new THREE.Color(0xffffff), 0.35), { roughness: 0.85, envMapIntensity: 0.2 });
+  const kD = 0.55, kW = (kx1 - kx0) * s, kH = (ky1 - ky0) * s;
+  put(g, new THREE.Mesh(new THREE.BoxGeometry(kW, kH, kD), [trimM, trimM, trimM, trimM, cut(sub(kx0, ky0, kx1, ky1)), trimM]), X((kx0 + kx1) / 2), Y((ky0 + ky1) / 2), kD / 2 - 0.22)
+    .castShadow = true;
+  const rise = 1.0 + (kind.length % 3) * 0.15;
+  put(g, hipRoof(kW + 0.3, depth + 0.3, rise, A.roof), X((kx0 + kx1) / 2), Y(ky0) + rise / 2 - 0.02, -depth / 2 + 0.05);
+
+  // papan nama timbul
+  const [sx0, sy0, sx1, sy1] = A.sign;
+  const sW = (sx1 - sx0) * s, sH = (sy1 - sy0) * s, sD = 0.12;
+  const edgeM = std(0x3a2a22, { roughness: 0.7 });
+  put(g, new THREE.Mesh(new THREE.BoxGeometry(sW, sH, sD), [edgeM, edgeM, edgeM, edgeM, cut(sub(sx0, sy0, sx1, sy1), { roughness: 0.6 }), edgeM]), X((sx0 + sx1) / 2), Y((sy0 + sy1) / 2), sD / 2 + 0.02)
+    .castShadow = true;
+
+  // kanopi miring (bagian belang atas) + rumbai bergerigi di ujung depannya
+  const [ax0, aTop, ax1, aMid, aBot] = A.awn;
+  const aW = (ax1 - ax0) * s, dy = (aMid - aTop) * s, D = 0.62;
+  const th = Math.atan2(D, dy), len = Math.hypot(D, dy);
+  const ownTex = (w, h) => {           // kanvas sendiri: muka dinding di baris kanopi nanti ditimpa bayangan
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    texs.push(t);
+    return t;
+  };
+  const stex = ownTex(ax1 - ax0, aMid - aTop);
+  const slope = put(g, mesh(new THREE.PlaneGeometry(aW, len), cut(stex, { side: THREE.DoubleSide })), X((ax0 + ax1) / 2), Y(aTop) - dy / 2, D / 2 + 0.03);
+  slope.rotation.x = -th;
+  const vtex = ownTex(ax1 - ax0, aBot - aMid), vcv = vtex.image;
+  const vH = (aBot - aMid) * s;
+  put(g, mesh(new THREE.PlaneGeometry(aW, vH), cut(vtex, { side: THREE.DoubleSide })), X((ax0 + ax1) / 2), Y(aMid) - vH / 2, D + 0.03);
+  // sirip samping kanopi (segitiga dinding → ujung depan)
+  const finM = std(0xffffff, { roughness: 0.9, side: THREE.DoubleSide });
+  for (const side of [-1, 1]) {
+    const fx = X(side < 0 ? ax0 : ax1) - side * 0.04;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([fx, Y(aTop), 0.02, fx, Y(aMid), D + 0.03, fx, Y(aMid) - vH * 0.55, D + 0.03, fx, Y(aMid) - vH * 0.3, 0.02], 3));
+    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    geo.computeVertexNormals();
+    g.add(mesh(geo, finM));
+  }
+
+  loadStoreSheet().then((img) => {
+    const src = keyStoreCrop(img, A, cv);
+    stex.image.getContext('2d').drawImage(cv, ax0 - cx0, aTop - cy0, stex.image.width, stex.image.height, 0, 0, stex.image.width, stex.image.height);
+    scallopMask(src, A, vcv);
+    hidePaintedAwning(src, A);
+    // warna sirip = belang gelap kanopi
+    let best = null;
+    for (let x = ax0 - cx0 + 8; x < ax1 - cx0 - 8; x++) {
+      const j = ((aTop - cy0 + 12) * src.w + x) * 4;
+      const l = src.d[j] + src.d[j + 1] + src.d[j + 2];
+      if (src.d[j + 3] && (!best || l < best.l)) best = { l, c: [src.d[j], src.d[j + 1], src.d[j + 2]] };
+    }
+    if (best) finM.color.setRGB(best.c[0] / 255, best.c[1] / 255, best.c[2] / 255, THREE.SRGBColorSpace);
+    for (const t of texs) t.needsUpdate = true;
+  }).catch((e) => console.warn('storefronts.webp gagal dimuat', e));
+
+  return { group: g, height: H, scale: s, Y };
+}
+
 function welcomeTexture() {
   return canvasTex(2048, 420, (g, w, h) => {
     g.fillStyle = '#f7efdc'; g.fillRect(0, 0, w, h);
@@ -315,13 +549,7 @@ function buildHouse({ w, h, d = 5, floors = 2, cols = 3, color, trim, shutter, s
   put(g, box(w + 0.18, 0.1, 0.24, trimM), 0, h - 0.18, -0.02);
 
   const rise = 1.0 + (seed % 3) * 0.15;                                                  // atap limas genteng
-  const roofGeo = new THREE.CylinderGeometry(0.16, 1, rise, 4, 1);
-  roofGeo.rotateY(Math.PI / 4);
-  const roof = new THREE.Mesh(roofGeo, std(0xa8532f, { roughness: 0.85, flatShading: true, envMapIntensity: 0.2 }));
-  roof.scale.set((w + 0.7) * 0.7071, 1, (d + 0.5) * 0.7071);
-  roof.position.set(0, h + 0.12 + rise / 2, -d / 2 - 0.05);
-  roof.castShadow = true;
-  g.add(roof);
+  put(g, hipRoof(w + 0.7, d + 0.5, rise, 0xa8532f), 0, h + 0.12 + rise / 2, -d / 2 - 0.05);
 
   const fh = h / floors;
   if (balcony) {                                                                          // balkon lantai atas
@@ -387,20 +615,21 @@ function buildCart(anim, steamTex) {
   for (const sz of [-0.34, 0.34]) { const hnd = put(g, box(1.25, 0.06, 0.07, woodDark), 1.55, 0.86, sz); hnd.rotation.z = -0.08; }
 
   // etalase kaca (mangkuk soto, sate, emping, jeruk nipis)
-  const gx = -0.42;
-  put(g, mesh(new THREE.BoxGeometry(1.05, 0.62, 0.78), glassM, { cast: false }), gx, 1.66, 0.02);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(g, box(0.035, 0.62, 0.035, steel, { cast: false }), gx + sx * 0.51, 1.66, 0.02 + sz * 0.37);
-  put(g, box(1.07, 0.03, 0.8, steel, { cast: false }), gx, 1.98, 0.02);
+  // (etalase dibuat ramping di kiri supaya wajah penjual terlihat di celah antara etalase & panci)
+  const gx = -0.6, GW = 0.7;
+  put(g, mesh(new THREE.BoxGeometry(GW, 0.62, 0.78), glassM, { cast: false }), gx, 1.66, 0.02);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(g, box(0.035, 0.62, 0.035, steel, { cast: false }), gx + sx * (GW / 2 - 0.015), 1.66, 0.02 + sz * 0.37);
+  put(g, box(GW + 0.02, 0.03, 0.8, steel, { cast: false }), gx, 1.98, 0.02);
   const bowlM = std(0xf4f1e8, { roughness: 0.3 });
   const soupM = std(0xc9892f, { roughness: 0.5 });
-  for (let i = 0; i < 6; i++) {
-    const bx = gx - 0.34 + (i % 3) * 0.34, bz = -0.12 + Math.floor(i / 3) * 0.3;
+  for (let i = 0; i < 4; i++) {
+    const bx = gx - 0.16 + (i % 2) * 0.32, bz = -0.12 + Math.floor(i / 2) * 0.3;
     put(g, mesh(new THREE.CylinderGeometry(0.11, 0.07, 0.08, 14), bowlM), bx, 1.375, bz);
     put(g, mesh(new THREE.CircleGeometry(0.095, 14), soupM), bx, 1.418, bz).rotation.x = -Math.PI / 2;
   }
-  for (let i = 0; i < 3; i++) put(g, mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.012, 14), std(0xe4b45a, { roughness: 0.6 })), gx + 0.05 + i * 0.01, 1.62 + i * 0.012, 0.15);   // emping
-  put(g, mesh(new THREE.SphereGeometry(0.05, 10, 8), std(0x7bb83a)), gx + 0.32, 1.62, 0.12);                                // jeruk nipis
-  put(g, mesh(new THREE.SphereGeometry(0.05, 10, 8), std(0x7bb83a)), gx + 0.4, 1.62, 0.22);
+  for (let i = 0; i < 3; i++) put(g, mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.012, 14), std(0xe4b45a, { roughness: 0.6 })), gx - 0.12 + i * 0.01, 1.62 + i * 0.012, 0.15);   // emping
+  put(g, mesh(new THREE.SphereGeometry(0.05, 10, 8), std(0x7bb83a)), gx + 0.14, 1.62, 0.12);                                // jeruk nipis
+  put(g, mesh(new THREE.SphereGeometry(0.05, 10, 8), std(0x7bb83a)), gx + 0.22, 1.62, 0.22);
 
   // panci besar berkuah
   const potX = 0.58;
@@ -455,28 +684,109 @@ function buildCart(anim, steamTex) {
   return { group: g, steam: st, bulb: new THREE.Vector3(-0.6, 2.38, 0.42) };
 }
 
+/** Tabung meruncing mengikuti kurva (jari-jari r0 di pangkal → r1 di ujung). */
+function taperTube(points, r0, r1, mat, { seg = 12, radial = 9 } = {}) {
+  const curve = new THREE.CatmullRomCurve3(points);
+  const geo = new THREE.TubeGeometry(curve, seg, 1, radial, false);
+  const pos = geo.attributes.position, P = new THREE.Vector3(), v = new THREE.Vector3();
+  for (let i = 0; i <= seg; i++) {
+    const u = i / seg;
+    curve.getPointAt(u, P);
+    const r = r0 + (r1 - r0) * Math.pow(u, 0.8);
+    for (let j = 0; j <= radial; j++) {
+      const k = i * (radial + 1) + j;
+      v.fromBufferAttribute(pos, k).sub(P).multiplyScalar(r).add(P);
+      pos.setXYZ(k, v.x, v.y, v.z);
+    }
+  }
+  geo.computeVertexNormals();
+  return { mesh: mesh(geo, mat), curve };
+}
+
 function buildTree(seed, anim, scale = 1) {
   const r = rng(seed);
   const g = new THREE.Group();
   const bark = std(0x5a4632, { roughness: 1 });
-  put(g, mesh(new THREE.CylinderGeometry(0.2, 0.34, 3.0, 8), bark), 0, 1.5, 0);
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2 + r();
-    const br = put(g, mesh(new THREE.CylinderGeometry(0.07, 0.14, 1.6, 6), bark), Math.cos(a) * 0.5, 3.3, Math.sin(a) * 0.5);
-    br.rotation.set(Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7);
+  const barkDark = std(0x43321f, { roughness: 1 });
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+  // batang: sedikit melengkung & meruncing, bercabang di ketinggian ±2.5 m (tidak ada dahan rendah)
+  const lean = (r() - 0.5) * 0.25;
+  const FORK = V(lean, 2.5, (r() - 0.5) * 0.1);
+  g.add(taperTube([V(0, -0.05, 0), V(0.04, 0.9, 0.02), V(lean * 0.5 - 0.03, 1.8, 0.03), FORK], 0.3, 0.2, bark, { seg: 10, radial: 12 }).mesh);
+  put(g, mesh(new THREE.CylinderGeometry(0.3, 0.44, 0.34, 12), barkDark), 0, 0.17, 0);          // pangkal akar melebar
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + r() * 0.6;
+    const root = put(g, mesh(new THREE.CylinderGeometry(0.03, 0.09, 0.6, 6), barkDark), Math.cos(a) * 0.36, 0.08, Math.sin(a) * 0.36);
+    root.rotation.set(Math.sin(a) * 1.2, 0, -Math.cos(a) * 1.2);
   }
+  put(g, mesh(new THREE.SphereGeometry(0.21, 12, 10), bark), FORK.x, FORK.y, FORK.z);              // simpul percabangan
+
+  // 3 dahan besar menyebar ke atas-luar + 1 pucuk tengah; tiap dahan punya ranting sekunder
+  const tips = [];
+  const n = 3;
+  const a0 = r() * Math.PI * 2;
+  for (let i = 0; i < n; i++) {
+    const a = a0 + (i / n) * Math.PI * 2 + (r() - 0.5) * 0.5;
+    const dx = Math.cos(a), dz = Math.sin(a) * 0.8;                      // sedikit dipipihkan ke arah jalan
+    const reach = 1.55 + r() * 0.35, up = 1.35 + r() * 0.3;
+    const pts = [
+      FORK.clone(),
+      V(FORK.x + dx * reach * 0.22, FORK.y + up * 0.35, FORK.z + dz * reach * 0.22),
+      V(FORK.x + dx * reach * 0.62, FORK.y + up * 0.72, FORK.z + dz * reach * 0.62),
+      V(FORK.x + dx * reach, FORK.y + up, FORK.z + dz * reach),
+    ];
+    const limb = taperTube(pts, 0.17, 0.05, bark);
+    g.add(limb.mesh);
+    tips.push(pts[3]);
+    // ranting sekunder dari tengah dahan
+    const base = limb.curve.getPointAt(0.5 + r() * 0.15);
+    const b = a + (r() < 0.5 ? -1 : 1) * (0.7 + r() * 0.4);
+    const end = V(base.x + Math.cos(b) * 0.85, base.y + 0.6 + r() * 0.3, base.z + Math.sin(b) * 0.65);
+    g.add(taperTube([base, base.clone().lerp(end, 0.5).add(V(0, 0.1, 0)), end], 0.075, 0.025, bark, { seg: 6, radial: 7 }).mesh);
+    tips.push(end);
+  }
+  const top = V(FORK.x + (r() - 0.5) * 0.3, FORK.y + 2.0, FORK.z + (r() - 0.5) * 0.2);
+  g.add(taperTube([FORK.clone(), V(FORK.x, FORK.y + 0.9, FORK.z), top], 0.15, 0.04, bark, { seg: 8 }).mesh);
+  tips.push(top);
+
+  // mahkota: gumpalan daun di ujung tiap dahan + inti di atas percabangan.
+  // Grup berporos di titik percabangan supaya ayunannya tidak menggeser pangkal dahan.
   const crown = new THREE.Group();
-  crown.position.y = 3.9;
+  crown.position.copy(FORK);
   g.add(crown);
-  const greens = [0x3f7a35, 0x4e8c3a, 0x2f6b30, 0x5a9a40];
-  for (let i = 0; i < 7; i++) {
-    const rad = 1.0 + r() * 0.7;
-    const m = mesh(new THREE.IcosahedronGeometry(rad, 1), std(greens[i % greens.length], { roughness: 0.9, flatShading: true, envMapIntensity: 0.2 }));
-    m.position.set((r() - 0.5) * 2.8, (r() - 0.3) * 1.1, (r() - 0.5) * 2.2);
+  const greens = [0x35702f, 0x468636, 0x2a6029, 0x559a3e, 0x3d7c33];
+  const addBlob = (p, rad, base) => {
+    const geo = new THREE.IcosahedronGeometry(rad, rad > 1 ? 3 : 2);
+    const pa = geo.attributes.position;
+    const col = new Float32Array(pa.count * 3);
+    const c0 = new THREE.Color(base);
+    const c = new THREE.Color();
+    for (let k = 0; k < pa.count; k++) {
+      const vx = pa.getX(k), vy = pa.getY(k), vz = pa.getZ(k);
+      const nn = 1 + 0.07 * Math.sin(vx * 5.1 + vy * 3.7) * Math.cos(vz * 4.3 + vx * 2.1);   // permukaan agak bergelombang
+      const flat = vy < 0 ? 0.72 : 0.92;                                                     // bagian bawah gumpalan lebih datar
+      pa.setXYZ(k, vx * nn, vy * nn * flat, vz * nn);
+      const u = THREE.MathUtils.clamp((vy / rad + 1) / 2, 0, 1);                             // 0 = dasar gumpalan, 1 = puncak
+      c.copy(c0).multiplyScalar(0.55 + u * 0.62);
+      c.offsetHSL(0.012 * u, 0, 0.02 * u);
+      col.set([c.r, c.g, c.b], k * 3);
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    const m = mesh(geo, std(0xffffff, { roughness: 0.92, vertexColors: true, envMapIntensity: 0.25 }));
+    m.position.copy(p).sub(FORK);
     crown.add(m);
+  };
+  addBlob(V(FORK.x, FORK.y + 1.8, FORK.z), 1.55, greens[0]);                                   // inti, menutup pucuk
+  tips.forEach((p, i) => addBlob(V(p.x, p.y + 0.25, p.z), 0.95 + r() * 0.3, greens[(i + 1) % greens.length]));
+  for (let i = 0; i < 6; i++) {                                                                  // pengisi celah antar dahan
+    const a = (i / 6) * Math.PI * 2 + r() * 0.5, d = 1.1 + r() * 0.6;
+    addBlob(V(FORK.x + Math.cos(a) * d, FORK.y + 1.5 + r() * 0.6, FORK.z + Math.sin(a) * d * 0.8), 0.8 + r() * 0.35, greens[i % greens.length]);
   }
+  for (let i = 0; i < 3; i++) addBlob(V(FORK.x + (r() - 0.5) * 1.2, FORK.y + 2.6 + r() * 0.4, FORK.z + (r() - 0.5) * 1.0), 0.65 + r() * 0.3, greens[3]);   // puncak terang
   const ph = r() * 6;
-  anim.push((t) => { crown.rotation.z = Math.sin(t * 0.8 + ph) * 0.014; crown.rotation.x = Math.sin(t * 0.6 + ph) * 0.01; });
+  anim.push((t) => { crown.rotation.z = Math.sin(t * 0.8 + ph) * 0.012; crown.rotation.x = Math.sin(t * 0.6 + ph) * 0.008; });
   g.scale.setScalar(scale);
   return g;
 }
@@ -493,6 +803,8 @@ function buildStreetLamp() {
   g.add(lantern);
   put(lantern, mesh(new THREE.CylinderGeometry(0.2, 0.13, 0.36, 6, 1), new THREE.MeshStandardMaterial({ color: 0xfff1c9, emissive: 0xffd98a, emissiveIntensity: 0.6, transparent: true, opacity: 0.9 })), 0, 0, 0);
   put(lantern, mesh(new THREE.ConeGeometry(0.27, 0.2, 6), dark), 0, 0.28, 0);
+  // batang penggantung: menyambung ujung lengan (y≈4.55) ke atap lentera (y≈4.38) supaya lampu tidak melayang
+  put(g, mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.26, 8), dark), 0.45, 4.46, 0);
   return g;
 }
 
@@ -569,37 +881,53 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     { w: 4.6, h: 4.5, color: '#e6c9c0', trim: '#fff7ea', shutter: '#4a5f7a', seed: 15, cols: 3, awning: ['#2f6b4f', '#f6efe2'] },
     { w: 4.8, h: 5.0, color: '#d4e0c8', trim: '#fbf5e4', shutter: '#7a4a3a', seed: 18, cols: 3 },
   ];
-  const place = (cfg, x, i) => {
+  // toko bernama dari lembar gambar (lebar dinding dalam meter; tinggi mengikuti proporsi gambar)
+  const STORE_W = { sate: 4.2, rawon: 4.3, wilson: 5.0, hoka: 5.0 };
+  const placeStore = (kind, w, x) => {
+    const st = buildStorefront(kind, w);
+    st.group.position.set(x, 0, WALL_Z);
+    scene.add(st.group);
+    return st;
+  };
+  const place = (cfg, x) => {
     const b = buildHouse(cfg);
     b.position.set(x, 0, WALL_Z);
     scene.add(b);
     return b;
   };
+  let sate = null;
   {
     let xr = -2.08;                                      // ke kiri dari tepi kiri toko
     for (let i = 0; i < 7; i++) {
-      const cfg = FACADES[i % FACADES.length];
-      place(cfg, xr - cfg.w / 2, i);
-      if (i === 1) { /* ruko ini memegang spanduk selamat datang (di bawah) */ }
-      xr -= cfg.w + 0.08;
+      // dua ruko terdekat jadi bilik bernama: i=0 Sate Booth (bersepanduk), i=1 Rawon Soup Booth
+      const kind = i === 0 ? 'sate' : i === 1 ? 'rawon' : null;
+      const w = kind ? STORE_W[kind] : FACADES[i % FACADES.length].w;
+      if (kind) { const st = placeStore(kind, w, xr - w / 2); if (kind === 'sate') sate = { st, x: xr - w / 2, w }; }
+      else place(FACADES[i % FACADES.length], xr - w / 2);
+      xr -= w + 0.08;
     }
     let xl = SHOP.x + SHOP.w / 2 + 0.08;                 // ke kanan dari tepi kanan toko
     for (let i = 0; i < 6; i++) {
-      const cfg = FACADES[(i + 3) % FACADES.length];
-      place(cfg, xl + cfg.w / 2, i);
-      xl += cfg.w + 0.08;
+      // di kanan toko antik: i=0 Wilson Racquet Store, i=1 Hoka Running Shoes
+      const kind = i === 0 ? 'wilson' : i === 1 ? 'hoka' : null;
+      const w = kind ? STORE_W[kind] : FACADES[(i + 3) % FACADES.length].w;
+      if (kind) placeStore(kind, w, xl + w / 2);
+      else place(FACADES[(i + 3) % FACADES.length], xl + w / 2);
+      xl += w + 0.08;
     }
   }
-  // ruko tepat di kiri toko (x ≈ -2.08 .. -6.5): spanduk selamat datang
+  // spanduk selamat datang digantung di depan jendela lantai atas Sate Booth
+  // (papan nama di atasnya, kanopi & bilik di bawahnya tetap terlihat)
   {
-    const banner = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 0.92), new THREE.MeshStandardMaterial({ map: welcomeTexture(), roughness: 0.95, side: THREE.DoubleSide }));
-    banner.position.set(-4.35, 3.35, WALL_Z + 0.5);
+    const BW = Math.min(4.2, sate.w - 0.2), by = sate.st.Y(222);
+    const banner = new THREE.Mesh(new THREE.PlaneGeometry(BW, 0.92), new THREE.MeshStandardMaterial({ map: welcomeTexture(), roughness: 0.95, side: THREE.DoubleSide }));
+    banner.position.set(sate.x, by, WALL_Z + 0.32);
     banner.castShadow = true;
     scene.add(banner);
-    for (const sx of [-1, 1]) put(scene, box(0.03, 0.5, 0.03, std(0x2a2420), { cast: false }), -4.35 + sx * 2.2, 3.7, WALL_Z + 0.25);
+    const ropeM = std(0x2a2420);
     for (const sx of [-1, 1]) {
-      const rope = put(scene, box(0.015, 0.55, 0.015, std(0x2a2420), { cast: false }), -4.35 + sx * 2.18, 3.55, WALL_Z + 0.5);
-      void rope;
+      put(scene, box(0.03, 0.03, 0.34, ropeM, { cast: false }), sate.x + sx * (BW / 2 - 0.06), by + 0.62, WALL_Z + 0.16);   // pengait di dinding
+      put(scene, box(0.015, 0.2, 0.015, ropeM, { cast: false }), sate.x + sx * (BW / 2 - 0.06), by + 0.53, WALL_Z + 0.32);  // tali
     }
     anim.push((t) => { banner.rotation.x = Math.sin(t * 0.9) * 0.015; });
   }
@@ -607,9 +935,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
   // ruko di celah tepat di belakang gerobak soto (antara deretan kiri dan toko antik)
   {
     const gapL = -2.08 + 0.08, gapR = SHOP.x - SHOP.w / 2 - 0.08;
-    const b = buildHouse({ w: gapR - gapL, h: 5.0, color: '#f1cba6', trim: '#fff6e4', shutter: '#3f6a8a', seed: 21, cols: 3, balcony: true });
-    b.position.set((gapL + gapR) / 2, 0, WALL_Z);
-    scene.add(b);
+    placeStore('baso', gapR - gapL, (gapL + gapR) / 2);           // Baso Booth tepat di belakang gerobak soto
   }
 
   // dua lapis bangunan di belakang deretan ruko supaya tanah/cakrawala di kejauhan tidak terlihat
@@ -742,8 +1068,38 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
   scene.add(cartLight);
   anim.push((t) => { cartLight.intensity = 4 * (1 + Math.sin(t * 9) * 0.03); });
 
+  /* ---------------- Penjual soto di balik gerobak ---------------- */
+  let serverHop = () => {};
+  if (SERVER_STYLE === '3d') {
+    // model 3D toon (server3d.js), berdiri di belakang gerobak, sedikit menoleh ke pembeli di kiri
+    const srv = buildSotoServer();
+    srv.group.scale.setScalar(0.78);
+    srv.group.position.set(CART.x + 0.02, 1.36, CART.z - 0.82);
+    srv.group.rotation.y = -0.14;
+    scene.add(srv.group);
+    anim.push(srv.update);
+    serverHop = srv.hop;
+  } else {
+    // versi gambar 2D (disimpan, tidak aktif): sprite yang selalu menghadap kamera
+    const SERVER_H = 1.2, SERVER_W = SERVER_H * 950 / 800;
+    const serverTex = new THREE.TextureLoader().load('assets/scene3/penjual-soto.png');
+    serverTex.colorSpace = THREE.SRGBColorSpace;
+    const server = new THREE.Sprite(new THREE.SpriteMaterial({ map: serverTex, transparent: true, alphaTest: 0.05, color: 0xf4ebe0 }));
+    server.scale.set(SERVER_W, SERVER_H, 1);
+    server.renderOrder = 4;
+    const SERVER_POS = new THREE.Vector3(CART.x + 0.1, 1.84, CART.z - 0.32);
+    server.position.copy(SERVER_POS);
+    scene.add(server);
+    const serverFx = { hop: 0 };
+    anim.push((t) => {
+      server.position.y = SERVER_POS.y + Math.sin(t * 2.2) * 0.025 + serverFx.hop * 0.18;
+      server.material.rotation = Math.sin(t * 1.4) * 0.04;
+    });
+    serverHop = () => gsap.fromTo(serverFx, { hop: 0 }, { hop: 1, duration: 0.22, ease: 'power2.out', yoyo: true, repeat: 1 });
+  }
+
   /* ---------------- Pohon, lampu jalan, tiang listrik, bendera ---------------- */
-  for (const [x, z, s, seed] of [[-9.4, -1.9, 1.0, 3], [10.2, -1.9, 1.05, 8], [-17.5, -1.6, 1.1, 14], [18.5, -1.8, 1.0, 21]]) {
+  for (const [x, z, s, seed] of [[-9.4, -0.7, 1.0, 3], [10.2, -0.7, 1.05, 8], [-17.5, -0.4, 1.1, 14], [18.5, -0.6, 1.0, 21]]) {
     const tr = buildTree(seed, anim, s);
     tr.position.set(x, 0, z);
     scene.add(tr);
@@ -1030,6 +1386,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     if (my !== runId) return;
 
     gsap.fromTo(A, { bubble: 0 }, { bubble: 1, duration: 0.4, ease: 'back.out(2)' });
+    serverHop();                       // penjual ikut senang menyajikan soto
     actor?.setState?.('eat');          // tas diletakkan, tangan memegang mangkuk & sendok
     await sleep(1.4);                  // beri waktu: letakkan tas → angkat mangkuk → suapan pertama
     if (my !== runId) return;

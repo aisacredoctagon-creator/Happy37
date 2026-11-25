@@ -16,7 +16,8 @@ const wait = (s) => new Promise((r) => setTimeout(r, s * 1000));
 // Ukuran koper
 const W = 5, D = 3.4, HB = 0.9, HL = 0.55, T = 0.08;
 const LID_OPEN = -105 * DEG;
-const FOAM_TOP = T + 0.32;
+const FOAM_TOP = T + 0.42;
+const POCKET_D = 0.2;               // kedalaman kantong cetakan di busa bawah
 const MOULD_Y = FOAM_TOP - 0.04;
 const TRAIN_SCALE = 0.85;
 const FLOAT_Y = 1.95;
@@ -71,7 +72,6 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     leatherDark: new THREE.MeshStandardMaterial({ color: 0x5a341d, roughness: 0.8, envMapIntensity: 0.3 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xc9a54a, metalness: 0.85, roughness: 0.32 }),
     lining: new THREE.MeshStandardMaterial({ color: 0x7d1f2a, roughness: 0.95, envMapIntensity: 0.3 }),
-    foam: new THREE.MeshStandardMaterial({ color: 0x26282d, roughness: 1, envMapIntensity: 0.3 }),
     ghost: new THREE.MeshBasicMaterial({ color: 0x0b0c0f, transparent: true, opacity: 0.55, depthWrite: false }),
     ghostEdge: new THREE.LineBasicMaterial({ color: 0xe8c87a, transparent: true, opacity: 0.55 }),
   };
@@ -109,7 +109,7 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   base.add(at(box(W, HB, T, M.leather), 0, HB / 2, -D / 2 + T / 2));
   base.add(at(box(T, HB, D - 2 * T, M.leather), W / 2 - T / 2, HB / 2, 0));
   base.add(at(box(T, HB, D - 2 * T, M.leather), -W / 2 + T / 2, HB / 2, 0));
-  base.add(at(box(W - 2 * T, FOAM_TOP - T, D - 2 * T, M.foam, 0.01), 0, T + (FOAM_TOP - T) / 2, 0));
+  // Busa bagian bawah dibangun setelah cetakan kereta (lihat buildFoamTray di bawah): ia butuh posisi ghost untuk memotong kantongnya.
   // pinggiran atas (trim)
   base.add(at(box(W + 0.02, 0.05, 0.1, M.leatherDark, 0.02), 0, HB - 0.025, D / 2 - 0.04));
   // sudut kuningan
@@ -267,7 +267,8 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   // Selama bagian-bagian dipasang (scene 6–8) cetakan kereta + bagian yang sudah terpasang "terbaring miring" di busa
   // (sisi berlogo menghadap ke atas, atap ke arah tutup). Setelah semua terpasang kereta berputar tegak kembali (assemble()).
   // Rotasi −90° pada sumbu x: z lokal → y dunia, y lokal → −z dunia. Posisi: bertumpu di permukaan busa & berpusat di tengah kedalaman koper.
-  const SIDE_POSE = { rx: -Math.PI / 2, y: 0.34, z: 0.45 };
+  // y turun sedalam kantong busa (POCKET_D) → kereta "terbenam" di cetakannya, bukan melayang di atas permukaan busa.
+  const SIDE_POSE = { rx: -Math.PI / 2, y: 0.34 - POCKET_D + 0.012, z: 0.45 };
   function setTrainSideways() {
     train.rotation.set(SIDE_POSE.rx, 0, 0);
     train.position.set(0, SIDE_POSE.y, SIDE_POSE.z);
@@ -330,6 +331,106 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
 
     return { cfg, i, obj, ghost, tile, tileMat, plaque, engrave, center, home, placed: false, glow: { v: 0 }, glowMats: null };
   });
+
+  /* ---------------- BUSA BAWAH: nampan berkantong (moulding) ---------------- */
+  // Dua lapis, seperti koper instrumen sungguhan: lapisan dasar polos + lapisan atas hasil EKSTRUSI yang
+  // dilubangi mengikuti jejak tiap gerbong (kantong dengan sudut membulat & takik jari di sisi depan).
+  // Kantong dihitung dari posisi ghost sebenarnya → selalu pas walaupun kereta digeser / diskalakan.
+  buildFoamTray();
+  function buildFoamTray() {
+    const PD = POCKET_D;                  // kedalaman kantong
+    const Y0 = FOAM_TOP - PD;             // lantai kantong
+    const BT = 0.022;                     // tebal bevel (tepi busa membulat)
+    const IW = W - 2 * T, ID = D - 2 * T;
+
+    // jejak (x,z) tiap gerbong dalam ruang lokal koper
+    base.updateWorldMatrix(true, true);
+    const inv = new THREE.Matrix4().copy(base.matrixWorld).invert();
+    const cols = [0, 1, 2].map(() => new THREE.Box3());
+    parts.forEach((p) => {
+      p.ghost.updateWorldMatrix(true, true);
+      const rel = new THREE.Matrix4();
+      p.ghost.traverse((o) => {
+        if (!o.isMesh) return;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        rel.multiplyMatrices(inv, o.matrixWorld);
+        cols[colFor(p.cfg.id)].union(o.geometry.boundingBox.clone().applyMatrix4(rel));
+      });
+    });
+
+    const MARGIN = 0.07, GAP = 0.16, R = 0.1;
+    const pockets = cols.map((b) => ({ x0: b.min.x - MARGIN, x1: b.max.x + MARGIN, z0: b.min.z - MARGIN, z1: b.max.z + MARGIN }));
+    pockets.sort((a, b) => a.x0 - b.x0);
+    for (let i = 1; i < pockets.length; i++) {     // sisakan sekat busa antar kantong
+      const over = pockets[i - 1].x1 + GAP - pockets[i].x0;
+      if (over > 0) { pockets[i - 1].x1 -= over / 2; pockets[i].x0 += over / 2; }
+    }
+
+    // kantong → Path 2D (x, y = −z, karena mesh nanti diputar −90° pada sumbu x). Takik jari bulat di tepi depan (z maks).
+    function pocketPath({ x0, x1, z0, z1 }, notchR) {
+      const yb = -z1, yt = -z0, xc = (x0 + x1) / 2, r = Math.min(R, (x1 - x0) / 4, (yt - yb) / 4);
+      const p = new THREE.Path();
+      p.moveTo(x0 + r, yb);
+      if (notchR) { p.lineTo(xc - notchR, yb); p.absarc(xc, yb, notchR, Math.PI, 2 * Math.PI, false); }
+      p.lineTo(x1 - r, yb); p.absarc(x1 - r, yb + r, r, -Math.PI / 2, 0, false);
+      p.lineTo(x1, yt - r); p.absarc(x1 - r, yt - r, r, 0, Math.PI / 2, false);
+      p.lineTo(x0 + r, yt); p.absarc(x0 + r, yt - r, r, Math.PI / 2, Math.PI, false);
+      p.lineTo(x0, yb + r); p.absarc(x0 + r, yb + r, r, Math.PI, Math.PI * 1.5, false);
+      return p;
+    }
+
+    const ow = IW - 2 * BT, od = ID - 2 * BT;
+    const outline = new THREE.Shape();
+    outline.moveTo(-ow / 2, -od / 2); outline.lineTo(ow / 2, -od / 2); outline.lineTo(ow / 2, od / 2); outline.lineTo(-ow / 2, od / 2); outline.closePath();
+    pockets.forEach((pk) => outline.holes.push(pocketPath(pk, 0.2)));
+
+    // Kantong kecil untuk aksesori di depan (kunci, kain lap, dsb.) — mengisi ruang kosong di depan gerbong
+    const frontZ = Math.max(...pockets.map((pk) => pk.z1)) + 0.42;
+    const accZ1 = ID / 2 - 0.16;
+    if (accZ1 - frontZ > 0.3) {
+      const accW = 1.2, gapX = 0.3;
+      [[-IW / 2 + 0.3, -IW / 2 + 0.3 + accW], [-IW / 2 + 0.3 + accW + gapX, -IW / 2 + 0.3 + 2 * accW + gapX]].forEach(([ax0, ax1]) =>
+        outline.holes.push(pocketPath({ x0: ax0, x1: ax1, z0: frontZ, z1: accZ1 }, 0)));
+    }
+
+    const layer = new THREE.ExtrudeGeometry(outline, {
+      depth: PD - 2 * BT, bevelEnabled: true, bevelThickness: BT, bevelSize: BT, bevelOffset: 0, bevelSegments: 2, curveSegments: 10,
+    });
+    layer.rotateX(-Math.PI / 2);        // y bentuk → −z dunia, ekstrusi → naik (+y)
+    // Butiran busa: noise halus sebagai map + bump, supaya permukaannya tidak terlihat seperti plastik polos.
+    // UV lapisan atas = koordinat bentuk (1 satuan = 1 ulangan); UV lapisan dasar 0..1 per sisi → repeat disesuaikan ukurannya.
+    const grain = (rx, ry) => {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const g = c.getContext('2d');
+      g.fillStyle = '#c4c4c4'; g.fillRect(0, 0, 128, 128);
+      let s = 7;
+      const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 1400; i++) {
+        const v = 150 + Math.floor(rnd() * 105), r = 0.6 + rnd() * 1.5;
+        g.fillStyle = `rgba(${v},${v},${v},0.55)`;
+        g.beginPath(); g.arc(rnd() * 128, rnd() * 128, r, 0, 7); g.fill();
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(rx, ry);
+      t.anisotropy = 4;
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    };
+    const foamLayerMat = new THREE.MeshStandardMaterial({ color: 0x1d1f23, map: grain(7, 7), roughness: 1, envMapIntensity: 0.3 });
+    foamLayerMat.bumpMap = foamLayerMat.map; foamLayerMat.bumpScale = 1.4;
+    const foamFloorMat = foamLayerMat.clone();
+    foamFloorMat.color.set(0x141519);   // dasar kantong sedikit lebih gelap → kedalaman terbaca
+    foamFloorMat.map = grain(IW * 7, ID * 7); foamFloorMat.bumpMap = foamFloorMat.map;
+
+    const top = new THREE.Mesh(layer, foamLayerMat);
+    top.position.y = Y0 + BT;
+    top.castShadow = top.receiveShadow = true;
+    base.add(top);
+
+    // lapisan dasar (lantai kantong), sedikit menyusup ke bawah lapisan atas supaya tak ada celah
+    base.add(at(box(IW, Y0 - T + 0.02, ID, foamFloorMat, 0.01), 0, T + (Y0 - T + 0.02) / 2, 0));
+  }
 
 
   /* ---------------- Kamera / view ---------------- */
@@ -671,6 +772,9 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     const fullTurns = Math.round(train.rotation.y / (2 * Math.PI)) * 2 * Math.PI;
     gsap.to(train.rotation, { y: fullTurns, x: 0, duration: 1.0, ease: 'power2.inOut' });
     await flyTo({ name: 'open' }, 1.0);
+    // kereta direbahkan lagi ke posisi terbaring miring seperti sebelum dirakit, sambil turun ke cetakan
+    gsap.to(train.rotation, { x: SIDE_POSE.rx, y: fullTurns, z: 0, duration: 1.1, ease: 'power2.inOut' });
+    gsap.to(train.position, { x: 0, y: SIDE_POSE.y, z: SIDE_POSE.z, duration: 1.1, ease: 'power2.inOut' });
     await new Promise((r) => gsap.to(trainRoot.position, { y: MOULD_Y, z: 0, duration: 1.1, ease: 'power2.inOut', onComplete: r }));
     gsap.to(lidPivot.rotation, { x: 0, duration: 1.4, ease: 'power2.inOut' });
     await flyTo({ name: 'closed' }, 1.5);

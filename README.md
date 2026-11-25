@@ -63,7 +63,10 @@ Cukup taruh file dengan nama berikut — website otomatis memakainya. Yang belum
 | Path | Keterangan |
 |---|---|
 | `assets/characters/gasing.png` | Karakter 2D lama. Sekarang hanya **cadangan** kalau WebGL gagal + ikon tab |
-| `assets/scene1/bg-stasiun.jpg` | Background stasiun |
+| `assets/scene1/Sky.png` | Langit biru (2168×725), lapisan paling belakang scene 1 |
+| `assets/scene1/cloud-1.png` … `cloud-3.png` | Awan transparan yang melayang pelan ke kanan di belakang stasiun (jumlah/ukuran/kecepatan diatur di `scene1()` · `js/scenes2d.js`) |
+| `assets/scene1/bg-stasiun4.png` | Peron stasiun (2170×725), langit transparan (alpha asli), lapisan paling depan |
+| `assets/scene1/bg-stasiun2.png` / `bg-stasiun.jpg` | Background stasiun versi lama (tidak dipakai lagi) |
 | `assets/scene2/parallax/*.png` | **Sprite parallax** pemandangan Surabaya dari jendela kereta (gedung, landmark Suro & Boyo / Tugu Pahlawan / gedung merah, pepohonan, tembok, rel, kabel & tiang). Hasil bedah aset dari Figma; semuanya PNG transparan |
 | `assets/scene2/train-inside.png` | Interior gerbong (1671×941) dengan jendela transparan; parallax Surabaya tampil di belakangnya |
 | `assets/scene3/bg-jalan-surabaya.jpg` | Background jalan/gang — hanya versi 2D cadangan (scene 3 3D dibangun prosedural) |

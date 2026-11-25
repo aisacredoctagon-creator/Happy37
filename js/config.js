@@ -17,15 +17,18 @@ const LOREM = [
 ];
 
 export const CONFIG = {
-  recipient: 'Pa Bram',
+  recipient: 'Pak Bram',
 
   ticket: {
-    name: 'Pa Bram',
-    date: '19 NOV 2026',
-    from: 'Jakarta',
-    to: 'Surabaya',
+    name: 'Pak Bram',
+    date: '30 NOV 2026',
+    from: 'Stasiun Gambir',
+    fromCity: 'Jakarta',
+    to: 'Stasiun Pasarturi',
+    toCity: 'Surabaya',
     train: 'InterCity 225',
-    seat: 'EKS-1 / 9A',
+    seat: 'TO-37 / 1A',
+    passengerType: 'Suite Class',
   },
 
   // Kode gembok koper (Scene 5)
@@ -71,10 +74,19 @@ export const CONFIG = {
   assets: {
     gasing: 'assets/characters/gasing.png',
 
-    s1_bg: 'assets/scene1/bg-stasiun.jpg',
+    // Scene 1 berlapis (hasil bedah): langit → awan bergerak pelan → stasiun (PNG/WebP, langit transparan)
+    s1_sky: 'assets/scene1/Sky.png',
+    s1_clouds: ['assets/scene1/cloud-1.png', 'assets/scene1/cloud-2.png', 'assets/scene1/cloud-3.png'],
+    s1_fg: 'assets/scene1/bg-stasiun4.png',
+    s1_logo: 'assets/scene1/logo-gasing-railways.webp', // logo di kepala tiket (latar putih → di-multiply ke kertas)
 
     s2_parallax: 'assets/scene2/parallax/', // folder sprite parallax Surabaya (hasil bedah dari Figma)
-    s2_room: 'assets/scene2/train-inside.png', // interior kereta, jendela transparan (1671×941)
+    s2_room: 'assets/scene2/train-inside.png', // interior kereta, jendela transparan (1671×941); tali pegangan sudah dilepas (lihat s2_straps)
+    s2_straps: [1, 2, 3, 4].map((n) => `assets/scene2/train-strap-${n}.png`), // 4 pegangan tangan (tali+segitiga) terpisah, diayun lewat CSS
+
+    s2_bottle: 'assets/scene2/bottle.webp', // botol minum di meja bawah jendela kereta
+    s2_poster_math: 'assets/scene2/poster-math.webp',     // poster "Kelas Matematika Dasar" (1024×1536) → bingkai kiri
+    s2_poster_wilson: 'assets/scene2/poster-wilson.webp', // poster Wilson (1024×1536) → bingkai kanan
 
     s3_bg: 'assets/scene3/bg-jalan-surabaya.jpg',
     s3_gerobak: 'assets/scene3/gerobak-soto-ambengan.png',
