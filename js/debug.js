@@ -3,15 +3,14 @@
 //  Aktif hanya kalau URL memakai ?debug (mis. http://localhost:5173/?debug)
 //    [  /  ]   scene sebelumnya / berikutnya
 //    `         sembunyikan / tampilkan panel
-//  Panel juga bisa dipakai di HP (tombol ◀ ▶ dan grid 1–12).
+//  Panel juga bisa dipakai di HP (tombol ◀ ▶ dan grid 0–12; 0 = halaman pembuka).
 // ============================================================
 import { h } from './assets.js';
 
 export function createDebugPanel({ total, titles, getScene, jump, onSkipFadeChange }) {
-  const cells = Array.from({ length: total }, (_, i) => {
-    const n = i + 1;
-    return h('button', { class: 'dbg-cell', type: 'button', title: titles[n], onclick: () => jump(n) }, String(n));
-  });
+  // scene 0 = halaman pembuka, lalu 1–total
+  const cells = Array.from({ length: total + 1 }, (_, n) =>
+    h('button', { class: 'dbg-cell', type: 'button', title: titles[n], onclick: () => jump(n) }, String(n)));
   const title = h('span', { class: 'dbg-title' });
   const prev = h('button', { class: 'dbg-btn', type: 'button', title: 'Scene sebelumnya  [', onclick: () => jump(getScene() - 1) }, '◀');
   const next = h('button', { class: 'dbg-btn', type: 'button', title: 'Scene berikutnya  ]', onclick: () => jump(getScene() + 1) }, '▶');
@@ -38,9 +37,9 @@ export function createDebugPanel({ total, titles, getScene, jump, onSkipFadeChan
   return {
     /** dipanggil main.js setiap scene/stage berubah */
     update(n) {
-      title.textContent = n ? `Scene ${n} · ${titles[n]}` : 'belum mulai';
-      cells.forEach((c, i) => c.classList.toggle('is-current', i + 1 === n));
-      prev.disabled = n <= 1;
+      title.textContent = `Scene ${n} · ${titles[n]}`;
+      cells.forEach((c, i) => c.classList.toggle('is-current', i === n));
+      prev.disabled = n <= 0;
       next.disabled = n >= total;
     },
   };

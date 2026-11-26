@@ -7,6 +7,7 @@
 //  const g = createGasing3D({ label, className, yaw, bag });
 //  parent.append(g);   // g.hop() → gasing meloncat (tas ikut terayun)
 //                      // g.wobble() → senggol tas saja
+//                      // g.turnTo(rad) → badan berputar halus ke yaw ini (0 = menghadap penonton, π = membelakangi)
 //                      // g.setState('idle' | 'walk' | 'eat') → gerak sarung tangan per state
 //                      //   (idle: jari bernapas, walk: lengan berayun, eat: menyendok;
 //                      //    hop = overlay: tangan terlempar naik saat meloncat)
@@ -88,6 +89,7 @@ export function createGasing3D({ label = 'Karakter Gasing', className = '', yaw 
   el.setAttribute('aria-label', label);
   el.hop = () => {};
   el.wobble = () => {};
+  el.turnTo = () => {};
   let pendingState = 'idle';   // setState sebelum model 3D siap
   el.setState = (s) => { pendingState = s; };
 
@@ -107,6 +109,7 @@ export function createGasing3D({ label = 'Karakter Gasing', className = '', yaw 
       if (!inst) return showFallback();
       el.hop = inst.hop;
       el.wobble = inst.wobble;
+      el.turnTo = inst.turnTo;
       el.setState = inst.setState;
       if (pendingState !== 'idle') inst.setState(pendingState);
       instances.add(inst);
@@ -457,6 +460,8 @@ function mount(THREE, el, yaw, withBag = false) {
   // State karakter (setState): 'idle' | 'walk' | 'eat' → menentukan gerak sarung tangan
   let stateName = 'idle', wWalk = 0, wEat = 0;
   const setState = (s) => { stateName = s; };
+  let yawTarget = yaw;
+  const turnTo = (a) => { yawTarget = a; };
   // pegas kritis-ringan: ω≈15 rad/s, ζ≈0.8 (substep supaya stabil di frame lambat)
   const K_SPR = 225, C_SPR = 24;
   const spring = (S, target, dt) => {
@@ -563,6 +568,7 @@ function mount(THREE, el, yaw, withBag = false) {
     }
     root.position.y = Math.sin(t * 1.5) * 0.09 * amp + hy;
     root.position.x = Math.sin(t * 0.5) * 0.06 * amp;
+    root.rotation.y += (yawTarget - root.rotation.y) * (1 - Math.exp(-dt * 6));   // berputar halus (turnTo)
 
     // bobot tiap state (halus berpindah): idle = sisanya
     const kS = 1 - Math.exp(-dt * 7);
@@ -758,6 +764,6 @@ function mount(THREE, el, yaw, withBag = false) {
     renderer.forceContextLoss();
   }
 
-  const inst = { el, seen: false, born: performance.now(), render, dispose, hop, wobble, setState };
+  const inst = { el, seen: false, born: performance.now(), render, dispose, hop, wobble, setState, turnTo };
   return inst;
 }

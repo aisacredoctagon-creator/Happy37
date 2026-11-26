@@ -260,7 +260,11 @@ function scene2(ctx) {
         h('img', { src: A.s2_poster_wilson, alt: 'Poster Wilson', draggable: 'false', decoding: 'async' })),
       // Botol minum di meja bawah jendela — bergetar halus mengikuti guncangan kereta
       h('div', { class: 's2-bottle' },
-        h('img', { src: A.s2_bottle, alt: 'Botol minum', draggable: 'false', decoding: 'async' }))),
+        h('img', { src: A.s2_bottle, alt: 'Botol minum', draggable: 'false', decoding: 'async' }),
+        // Air di dalam botol — anak dari .s2-bottle, jadi ikut bergetar; permukaannya juga berayun sendiri (slosh)
+        h('div', { class: 's2-bottle-water', 'aria-hidden': 'true' },
+          h('div', { class: 's2-bottle-wave' }),
+          h('i', { class: 's2-bubble is-1' }), h('i', { class: 's2-bubble is-2' }), h('i', { class: 's2-bubble is-3' })))),
     gasing('Gasing lihat jendela', 's2-gasing', 0.3));
 
   return {
