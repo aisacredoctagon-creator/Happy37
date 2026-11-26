@@ -883,6 +883,20 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
   ];
   // toko bernama dari lembar gambar (lebar dinding dalam meter; tinggi mengikuti proporsi gambar)
   const STORE_W = { sate: 4.2, rawon: 4.3, wilson: 5.0, hoka: 5.0 };
+  // Gambar toko lebih lebar dari dindingnya (pot tanaman, lisplang & kanopi menjorok ke samping).
+  // Jarak antar bangunan = jumlah tonjolan kedua tetangga, supaya pot/lisplang tidak saling tembus;
+  // celahnya ditutup dinding sekat yang sedikit menjorok ke dalam.
+  const OV_HOUSE = 0.17, OV_SHOP = 0.22;                // tonjolan samping ruko biasa (lisplang) & toko antik (lis emas)
+  const storeOv = (kind, w) => {
+    const A = STORE_ART[kind], s = w / (A.wall[1] - A.wall[0]);
+    return [(A.wall[0] - A.crop[0]) * s, (A.crop[2] - A.wall[1]) * s];
+  };
+  const gapFor = (ovA, ovB, bothPlain) => (bothPlain ? 0.08 : ovA + ovB + 0.04);
+  const pierM = std(0xd9cdb6, { roughness: 0.95, envMapIntensity: 0.2 });
+  const pier = (x0, x1, h) => {                         // dinding sekat di celah antar bangunan
+    if (x1 - x0 < 0.15) return;
+    put(scene, box(x1 - x0 + 0.04, h, 3, pierM), (x0 + x1) / 2, h / 2, WALL_Z - 0.14 - 1.5);
+  };
   const placeStore = (kind, w, x) => {
     const st = buildStorefront(kind, w);
     st.group.position.set(x, 0, WALL_Z);
@@ -895,27 +909,47 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     scene.add(b);
     return b;
   };
-  let sate = null;
-  {
-    let xr = -2.08;                                      // ke kiri dari tepi kiri toko
-    for (let i = 0; i < 7; i++) {
-      // dua ruko terdekat jadi bilik bernama: i=0 Sate Booth (bersepanduk), i=1 Rawon Soup Booth
-      const kind = i === 0 ? 'sate' : i === 1 ? 'rawon' : null;
-      const w = kind ? STORE_W[kind] : FACADES[i % FACADES.length].w;
-      if (kind) { const st = placeStore(kind, w, xr - w / 2); if (kind === 'sate') sate = { st, x: xr - w / 2, w }; }
-      else place(FACADES[i % FACADES.length], xr - w / 2);
-      xr -= w + 0.08;
+  /** Satu deret bangunan dari `edge` ke arah `dir` (-1 kiri, +1 kanan). `first` = tetangga awal { ov, h, plain }. */
+  const row = (edge, dir, items, first) => {
+    let prev = first;
+    const out = [];
+    for (const it of items) {
+      const [ovL, ovR] = it.kind ? storeOv(it.kind, it.w) : [OV_HOUSE, OV_HOUSE];
+      const near = dir < 0 ? ovR : ovL, far = dir < 0 ? ovL : ovR;   // sisi yang menghadap tetangga sebelumnya / berikutnya
+      const gap = gapFor(prev.ov, near, prev.plain && !it.kind);
+      const x = edge + dir * (gap + it.w / 2);
+      const st = it.kind ? placeStore(it.kind, it.w, x) : (place(it.cfg, x), null);
+      const hh = st ? st.height : it.cfg.h;
+      pier(Math.min(edge, edge + dir * gap), Math.max(edge, edge + dir * gap), Math.min(prev.h, hh) - 0.3);
+      out.push({ ...it, x, st });
+      edge += dir * (gap + it.w);
+      prev = { ov: far, h: hh, plain: !it.kind };
     }
-    let xl = SHOP.x + SHOP.w / 2 + 0.08;                 // ke kanan dari tepi kanan toko
-    for (let i = 0; i < 6; i++) {
-      // di kanan toko antik: i=0 Wilson Racquet Store, i=1 Hoka Running Shoes
-      const kind = i === 0 ? 'wilson' : i === 1 ? 'hoka' : null;
-      const w = kind ? STORE_W[kind] : FACADES[(i + 3) % FACADES.length].w;
-      if (kind) placeStore(kind, w, xl + w / 2);
-      else place(FACADES[(i + 3) % FACADES.length], xl + w / 2);
-      xl += w + 0.08;
-    }
+    return out;
+  };
+
+  // celah di belakang gerobak soto: Sate (kiri) | Baso | toko antik (kanan)
+  const SATE_R = -2.38;                                  // tepi kanan dinding Sate Booth
+  const basoR = SHOP.x - SHOP.w / 2;
+  let basoW = 3.6;
+  for (let k = 0; k < 3; k++) {                          // lebar Baso bergantung pada tonjolannya sendiri → iterasi singkat
+    const [bl, br] = storeOv('baso', basoW);
+    basoW = (basoR - (br + OV_SHOP + 0.04)) - (SATE_R + storeOv('sate', STORE_W.sate)[1] + bl + 0.04);
   }
+  const [basoOvL, basoOvR] = storeOv('baso', basoW);
+  const basoX1 = basoR - (basoOvR + OV_SHOP + 0.04), basoX0 = basoX1 - basoW;
+  const baso = placeStore('baso', basoW, (basoX0 + basoX1) / 2);   // Baso Booth tepat di belakang gerobak soto
+  pier(basoX1, basoR, Math.min(baso.height, SHOP.h) - 0.3);
+
+  // deret kiri dimulai dari Sate (bersepanduk), lalu Rawon, lalu ruko biasa
+  const left = [{ kind: 'sate', w: STORE_W.sate }, { kind: 'rawon', w: STORE_W.rawon }];
+  for (let i = 2; i < 7; i++) left.push({ cfg: FACADES[i % FACADES.length], w: FACADES[i % FACADES.length].w });
+  const sate = row(basoX0, -1, left, { ov: basoOvL, h: baso.height, plain: false })[0];   // tepi kanannya jatuh di SATE_R
+  // deret kanan dari toko antik: Wilson, Hoka, lalu ruko biasa
+  const right = [{ kind: 'wilson', w: STORE_W.wilson }, { kind: 'hoka', w: STORE_W.hoka }];
+  for (let i = 2; i < 6; i++) right.push({ cfg: FACADES[(i + 3) % FACADES.length], w: FACADES[(i + 3) % FACADES.length].w });
+  row(SHOP.x + SHOP.w / 2, 1, right, { ov: OV_SHOP, h: SHOP.h, plain: false });
+
   // spanduk selamat datang digantung di depan jendela lantai atas Sate Booth
   // (papan nama di atasnya, kanopi & bilik di bawahnya tetap terlihat)
   {
@@ -930,12 +964,6 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
       put(scene, box(0.015, 0.2, 0.015, ropeM, { cast: false }), sate.x + sx * (BW / 2 - 0.06), by + 0.53, WALL_Z + 0.32);  // tali
     }
     anim.push((t) => { banner.rotation.x = Math.sin(t * 0.9) * 0.015; });
-  }
-
-  // ruko di celah tepat di belakang gerobak soto (antara deretan kiri dan toko antik)
-  {
-    const gapL = -2.08 + 0.08, gapR = SHOP.x - SHOP.w / 2 - 0.08;
-    placeStore('baso', gapR - gapL, (gapL + gapR) / 2);           // Baso Booth tepat di belakang gerobak soto
   }
 
   // dua lapis bangunan di belakang deretan ruko supaya tanah/cakrawala di kejauhan tidak terlihat
