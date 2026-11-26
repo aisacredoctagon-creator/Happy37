@@ -110,6 +110,28 @@ button { font: inherit; color: inherit; cursor: pointer; }
   backdrop-filter: blur(6px);
   pointer-events: auto;
 }
+.fs-btn {
+  position: fixed; top: calc(12px + var(--safe-t)); right: 16px; z-index: 65;
+  font-size: 22px; line-height: 1; cursor: pointer;
+}
+/* Penjaga orientasi: layar sentuh (HP/tablet) dalam posisi potret → tutup semuanya dengan ajakan memutar layar */
+.rotate-guard {
+  display: none;
+  position: fixed; inset: 0; z-index: 200;
+  flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 24px; text-align: center;
+  background: #1b130e; color: var(--cream, #f6efe2);
+  font-family: var(--font-display, inherit); font-size: 20px; line-height: 1.4;
+}
+.rotate-guard p { margin: 0; }
+.rotate-guard small { font-size: 14px; opacity: .7; font-family: inherit; }
+.rotate-icon { font-size: 72px; animation: rotate-hint 2.2s ease-in-out infinite; }
+@keyframes rotate-hint { 0%, 25% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+@media (orientation: portrait) and (pointer: coarse) { .rotate-guard { display: flex; } }
+@media (prefers-reduced-motion: reduce) { .rotate-icon { animation: none; } }
+
+.fs-btn.is-on { background: rgba(240, 180, 41, .85); color: #1b130e; }
+.hud-top { padding-right: 72px; }
 .icon-btn.is-muted { opacity: .45; text-decoration: line-through; }
 
 /* ---------------- HUD ---------------- */

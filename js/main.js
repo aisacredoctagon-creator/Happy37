@@ -288,6 +288,41 @@ async function setupMusic() {
   });
 }
 
+/* ---------------- Layar penuh ---------------- */
+// Tombol ⛶ di pojok kanan atas (juga tombol F). Disembunyikan kalau browser tak mendukung (mis. iPhone Safari).
+{
+  const fsBtn = $('fsBtn'), root = document.documentElement;
+  const request = root.requestFullscreen ?? root.webkitRequestFullscreen;
+  const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
+  const isFs = () => !!(document.fullscreenElement ?? document.webkitFullscreenElement);
+  if (fsBtn && request && document.fullscreenEnabled !== false) {
+    fsBtn.hidden = false;
+    const toggle = () => { try { (isFs() ? exit.call(document) : request.call(root))?.catch?.(() => {}); } catch { /* diabaikan */ } };
+    const sync = () => {
+      fsBtn.classList.toggle('is-on', isFs());
+      fsBtn.textContent = isFs() ? '✕' : '⛶';
+      fsBtn.setAttribute('aria-label', isFs() ? 'Keluar layar penuh' : 'Layar penuh');
+    };
+    // Situs ini hanya untuk mode mendatar: di layar sentuh, begitu masuk layar penuh kunci orientasi ke landscape
+    // (Android Chrome; iPhone Safari tidak mendukung → di sana penjaga orientasi (.rotate-guard) yang menutup layar potret)
+    const lockLandscape = () => {
+      if (!matchMedia('(pointer: coarse)').matches) return;
+      if (isFs()) screen.orientation?.lock?.('landscape')?.catch?.(() => {});
+      else screen.orientation?.unlock?.();
+    };
+    fsBtn.addEventListener('click', toggle);
+    document.addEventListener('fullscreenchange', () => { sync(); lockLandscape(); });
+    document.addEventListener('webkitfullscreenchange', () => { sync(); lockLandscape(); });
+    // di HP: tombol "Mulai Perjalanan" sekaligus masuk layar penuh + kunci landscape (butuh sentuhan pengguna)
+    if (matchMedia('(pointer: coarse)').matches) {
+      $('startBtn')?.addEventListener('click', () => { if (!isFs()) toggle(); });
+    }
+    addEventListener('keydown', (e) => {
+      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) toggle();
+    });
+  }
+}
+
 /* ---------------- Jeda otomatis saat tab / aplikasi tidak aktif ---------------- */
 // Semua <video>/<audio> (termasuk yang tidak ada di DOM, mis. video TV 3D) didaftarkan saat play(),
 // lalu dijeda saat tab disembunyikan dan dilanjutkan saat kembali. Loop render 3D punya jeda sendiri (world3d.js).
