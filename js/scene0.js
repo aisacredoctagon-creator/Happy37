@@ -128,7 +128,10 @@ export function mountScene0(root, startBtn) {
   // introDone: selesai saat plakat & tombol sudah tampil (main.js memakainya untuk memuat dunia 3D saat layar diam)
   let introDone; const introDonePromise = new Promise((r) => { introDone = r; });
   const BTN_DELAY = 0.55;   // detik setelah plakat mulai muncul
-  const showButton = () => { startBtn.classList.add('is-in'); introDone(); };
+  // Gasing melambai pelan sambil menunggu tombol ditekan (berhenti saat enter())
+  let wave = null;
+  const waveLoop = () => { if (!gasing.isConnected || entering) return; gasing.gesture?.('wave'); wave = gsap.delayedCall(8, waveLoop); };
+  const showButton = () => { startBtn.classList.add('is-in'); introDone(); if (!reduced) wave = gsap.delayedCall(1.0, waveLoop); };
   const showTitle = () => {
     if (reduced) { gsap.set(plaque, { autoAlpha: 1 }); showButton(); return; }
     run(() => {
@@ -147,9 +150,12 @@ export function mountScene0(root, startBtn) {
     if (reduced) { resolve(); return; }
     run(() => {
       gasing.setState('walk');
-      gasing.turnTo(Math.PI);              // membelakangi penonton, menghadap stasiun
+      // Arah hadap mengikuti kecepatan yang dilaporkan lewat move() (gasing3d.js): bergerak ke kanan-belakang → berbalik membelakangi penonton, menghadap stasiun
+      wave?.kill();
+      const steer = () => gasing.move(0.6, -1.2);
+      gsap.ticker.add(steer);
       const s = stage.clientWidth / FW;
-      const tl = gsap.timeline({ onComplete: resolve });
+      const tl = gsap.timeline({ onComplete: () => { gsap.ticker.remove(steer); resolve(); } });
       tl.call(() => gasing.hop(), null, 0)
         .to(gasing, { xPercent: DOOR.xPercent, yPercent: DOOR.yPercent, scale: 0.6, transformOrigin: '50% 100%', duration: 1.7, ease: 'power1.inOut' }, 0.55)
         .to(gasing, { y: -22 * s, duration: 0.2, ease: 'power2.out', yoyo: true, repeat: 1 }, 0.9)

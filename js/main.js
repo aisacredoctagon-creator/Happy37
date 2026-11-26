@@ -288,6 +288,24 @@ async function setupMusic() {
   });
 }
 
+/* ---------------- Jeda otomatis saat tab / aplikasi tidak aktif ---------------- */
+// Semua <video>/<audio> (termasuk yang tidak ada di DOM, mis. video TV 3D) didaftarkan saat play(),
+// lalu dijeda saat tab disembunyikan dan dilanjutkan saat kembali. Loop render 3D punya jeda sendiri (world3d.js).
+const mediaSeen = new Set();
+const mediaPaused = new Set();
+const nativePlay = HTMLMediaElement.prototype.play;
+HTMLMediaElement.prototype.play = function (...args) { mediaSeen.add(this); return nativePlay.apply(this, args); };
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    for (const m of mediaSeen) if (!m.paused && !m.ended) { m.pause(); mediaPaused.add(m); }
+    if (!params.has('debug')) gsap.globalTimeline.pause();
+  } else {
+    for (const m of mediaPaused) m.play().catch(() => {});
+    mediaPaused.clear();
+    gsap.globalTimeline.resume();
+  }
+});
+
 /* ---------------- Start ---------------- */
 const params = new URLSearchParams(location.search);
 const startScene = Math.min(TOTAL, Math.max(1, parseInt(params.get('scene') ?? '1', 10) || 1));

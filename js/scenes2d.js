@@ -1,14 +1,15 @@
 import { gsap } from 'gsap';
 import { CONFIG } from './config.js';
 import { slot, h, mediaExists } from './assets.js';
-import { createGasing3D, bagMouthOffset } from './gasing3d.js';
+import { createGasing3D, bagMouthOffset, GESTURE_TIMING } from './gasing3d.js';
 
 const A = CONFIG.assets;
 
 // Gasing: karakter 3D (js/gasing3d.js). yaw > 0 = badan menghadap sedikit ke kanan layar.
 // bag = true → Gasing menjinjing tas tenis + raket (model 3D js/bag3d.js) di sarung tangan kirinya.
 // Kalau WebGL gagal → gasing.png + slot gambar assets/scene3/tas-raket-tenis.png
-const gasing = (label, className = '', yaw = 0, bag = false) => createGasing3D({ label, className, yaw, bag });
+const gasing = (label, className = '', yaw = 0, bag = false, bagSide = 0) => createGasing3D({ label, className, yaw, bag, bagSide });
+const S12_BAG_SIDE = 1.1;   // rad: scene 1 & 2 — tas raket digeser ke samping badan (+ = kiri layar) supaya terlihat, tidak sepenuhnya tertutup badan
 
 const bg = (src, label, tint) => {
   const el = slot({ src, label, className: 'bg', fit: 'cover' });
@@ -56,7 +57,7 @@ function scene1(ctx) {
     clouds,
     h('img', { class: 's1-fg', src: A.s1_fg, alt: 'Peron Stasiun Gambir', draggable: 'false' }));
 
-  const g = gasing('Gasing menunggu tiket', 's1-gasing', 0.35);
+  const g = gasing('Gasing menunggu tiket', 's1-gasing', 0.35, true, S12_BAG_SIDE);   // tas raket di punggung (sama seperti scene lain)
   const el = h('section', { class: 'scene s1' },
     stage,
     g,
@@ -94,6 +95,8 @@ function scene1(ctx) {
   return {
     el,
     enter() {
+      // satu gestur: menunjuk tiket setelah tiket selesai muncul (memberi tahu pemain apa yang diketuk)
+      gsap.delayedCall(1.2 + GESTURE_TIMING.lead, () => { if (!done) g.gesture('point'); });
       gsap.from(ticket, { y: 80, rotate: 8, opacity: 0, duration: 0.9, ease: 'back.out(1.4)', delay: 0.3 });
       gsap.from(el.querySelector('.s1-gasing'), { x: -60, opacity: 0, duration: 0.8, ease: 'power2.out' });
     },
@@ -243,6 +246,7 @@ function buildSurabayaParallax() {
 }
 
 function scene2(ctx) {
+  const g2 = gasing('Gasing lihat jendela', 's2-gasing', 0.3, true, S12_BAG_SIDE);   // tas raket di punggung (sama seperti scene lain)
   const el = h('section', { class: 'scene s2' },
     h('div', { class: 's2-wall' }),
     // Interior kereta (PNG dengan jendela transparan): parallax Surabaya ada DI BELAKANG gambar ini
@@ -265,11 +269,12 @@ function scene2(ctx) {
         h('div', { class: 's2-bottle-water', 'aria-hidden': 'true' },
           h('div', { class: 's2-bottle-wave' }),
           h('i', { class: 's2-bubble is-1' }), h('i', { class: 's2-bubble is-2' }), h('i', { class: 's2-bubble is-3' })))),
-    gasing('Gasing lihat jendela', 's2-gasing', 0.3));
+    g2);
 
   return {
     el,
     enter() {
+      gsap.delayedCall(1.2, () => g2.gesture('marvelNear'));   // kagum melihat pemandangan
       el.classList.add('is-running'); // mulai menggulir semua lapisan parallax
       gsap.to(el.querySelector('.s2-window'), { y: 2, duration: 0.18, yoyo: true, repeat: -1, ease: 'sine.inOut' });
       gsap.from(el.querySelector('.s2-gasing'), { y: 60, opacity: 0, duration: 0.8, delay: 0.3 });
@@ -455,7 +460,7 @@ function scene11(ctx) {
       gsap.set(ball, { x: startX, y: startY, rotate: 0, opacity: 1 });
 
       const tl = gsap.timeline({ delay: ctx.at12 ? 0 : 1.2 })
-        .add(() => g11.wobble())               // senggol tas, lalu Gasing meloncat
+        .add(() => { g11.wobble(); g11.gesture('startle'); })   // senggol tas (kaget), lalu Gasing meloncat
         .add(() => g11.hop(), '+=0.4')
         .to(ball, { y: floorY, duration: 0.7, ease: 'bounce.out' })
         .to(ball, { x: startX + dist, rotate: (dist / (Math.PI * size)) * 360, duration: Math.max(1.6, dist / 260), ease: 'power2.out' }, '-=0.15')
