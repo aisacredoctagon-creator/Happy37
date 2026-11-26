@@ -33,7 +33,7 @@ body {
 [hidden] { display: none !important; }
 button { font: inherit; color: inherit; cursor: pointer; }
 
-#app { position: fixed; inset: 0; overflow: hidden; }
+#app { position: fixed; inset: 0; overflow: hidden; touch-action: manipulation; }   /* cegah double-tap zoom & jeda 300ms */
 
 #gl {
   position: absolute; inset: 0;
@@ -53,6 +53,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-weight: 600;
   font-size: clamp(15px, 1.6vw, 18px);
   padding: 12px 22px;
+  min-height: 44px;
   border-radius: 999px;
   box-shadow: 0 4px 0 var(--tomato-dark), 0 10px 24px rgba(0, 0, 0, .3);
   transition: transform .12s ease, box-shadow .12s ease;
@@ -65,7 +66,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn-big { font-size: clamp(18px, 2.2vw, 22px); padding: 16px 30px; }
 
 .icon-btn {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 44px; height: 44px; border-radius: 50%;
   border: 0; background: rgba(27, 19, 14, .6); color: var(--cream);
   backdrop-filter: blur(6px);
   pointer-events: auto;
@@ -91,7 +92,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .progress .dot.is-current { background: var(--mustard); }
 .scene-label {
   font-family: var(--font-display);
-  font-size: 13px; font-weight: 500;
+  font-size: 14px; font-weight: 500;
   padding: 5px 12px; border-radius: 999px;
   background: rgba(27, 19, 14, .6);
   backdrop-filter: blur(6px);
@@ -103,7 +104,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pills { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; pointer-events: none; }
 .pills:not(:has(.pill:not([hidden]))) { display: none; }
 .pill {
-  font-size: 14px; font-weight: 700;
+  font-size: 15px; font-weight: 700;
   padding: 7px 14px; border-radius: 999px;
   background: rgba(27, 19, 14, .72); backdrop-filter: blur(6px);
   border: 1px solid rgba(246, 239, 226, .18);
@@ -160,7 +161,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .note-body p { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(16px, 1.8vw, 18px); line-height: 32px; margin: 0; }
 .note-close {
   position: absolute; top: 10px; right: 10px;
-  width: 42px; height: 42px; border-radius: 50%;
+  width: 44px; height: 44px; border-radius: 50%;
   border: 0; background: var(--ink); color: var(--paper);
   font-size: 18px; line-height: 1;
 }
@@ -191,7 +192,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 6px 0 28px; color: var(--mustard);
   text-shadow: 0 4px 0 var(--tomato-dark);
 }
-.start-tip { font-size: 13px; opacity: .55; margin-top: 18px; }
+.start-tip { font-size: 14px; opacity: .55; margin-top: 18px; }
 
 /* ============================================================
    SLOT ASET + PLACEHOLDER
@@ -235,6 +236,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   50% { transform: rotate(2.5deg) translateY(-2%); }
 }
 /* Gasing 3D (js/gasing3d.js): canvas transparan, animasi idle ada di dalam model */
+.gasing3d { min-height: 0; }   /* cegah canvas (lebih besar dari elemen) mendorong tinggi elemen tanpa batas */
 .gasing3d > canvas {
   display: block; width: 100%; height: 100%;   /* ukuran sebenarnya (lebih besar dari elemen) di-set js/gasing3d.js */
   pointer-events: none;
@@ -362,7 +364,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 @keyframes poles { to { background-position: -520px 0; } }
 .s2-glare { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, .25) 40%, transparent 50%); pointer-events: none; }
-.s2-gasing { position: absolute; left: 10%; bottom: 0; height: 52%; }
+.s2-gasing { position: absolute; left: 14%; bottom: 0; height: 52%; }
 
 /* ---------- Scene 3: Jalan Surabaya ---------- */
 .s3-sign {
@@ -492,7 +494,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
    ============================================================ */
 @media (max-width: 760px), (orientation: portrait) {
   :root { --hud-h: 56px; }
-  .scene-label { font-size: 12px; }
+  .scene-label { font-size: 13px; }
 
   .s1-gasing { left: 6%; bottom: 20%; height: 40%; }
   .s1-ticket-wrap { left: 6%; right: 6%; width: auto; top: calc(var(--hud-h) + 6%); transform: rotate(-3deg); }
@@ -557,9 +559,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .dbg-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 .dbg-cell { padding: 0; }
 .dbg-cell.is-current { background: var(--mustard); color: var(--ink); border-color: transparent; }
+.dbg-gest { display: none; gap: 4px; max-height: 40vh; overflow: auto; }
+.dbg-gest.is-open { display: grid; }
+.dbg-grid3 { grid-template-columns: repeat(3, 1fr); }
+.dbg-g { min-height: 30px; font-size: 11px; }
 .dbg-check { display: flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; }
 .dbg-check input { accent-color: var(--mustard); }
 
 @media (max-width: 640px) {
   .dbg { top: calc(104px + var(--safe-t)); }
 }
+/* panel debug: slider jempol soto (sementara; lihat THUMB_TUNER di js/debug.js) */
+.dbg-thumb.is-open { display: grid; gap: 4px; }
+.dbg-thumb-row { display: grid; grid-template-columns: 1fr 90px 38px; align-items: center; gap: 4px; font-size: 11px; }
+.dbg-thumb-row input { width: 100%; accent-color: var(--mustard); }
+.dbg-thumb-val { text-align: right; font-variant-numeric: tabular-nums; }
+.dbg-thumb-out { display: block; font-size: 10px; white-space: normal; word-break: break-all; user-select: all; opacity: .85; }

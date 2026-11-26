@@ -23,10 +23,12 @@ const FLOAT_Y = 1.95;
 
 export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   /* ---------------- Renderer / scene / camera ---------------- */
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Perangkat sentuh (HP/tablet): lebih ringan — tanpa antialias, pixel ratio ≤ 1.5, bayangan PCF biasa
+  const lowPower = matchMedia('(pointer: coarse)').matches;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowPower, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPower ? 1.5 : 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = lowPower ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
 
@@ -687,12 +689,21 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     if (mode === 'case' && !camTween) setView(currentView);
   }
   new ResizeObserver(resize).observe(canvas);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 250));   // iOS: ukuran baru baru tersedia sesaat setelah rotasi
 
   const clock = new THREE.Clock();
-  let raf = 0, running = false;
+  let raf = 0, running = false, lastT = 0;
+  // Tab disembunyikan → hentikan render sama sekali; kembali → lanjut tanpa lonjakan waktu
+  document.addEventListener('visibilitychange', () => {
+    if (!running) return;
+    if (document.hidden) { cancelAnimationFrame(raf); raf = 0; }
+    else if (!raf) { lastT = clock.getElapsedTime(); frame(); }
+  });
   function frame() {
     raf = requestAnimationFrame(frame);
     const t = clock.getElapsedTime();
+    const dt = Math.min(t - lastT, 0.1);   // detik sejak frame lalu (dibatasi supaya tidak meloncat setelah jeda)
+    lastT = t;
     if (mode === 'street') {
       street.update(t);
       renderer.render(street.scene, street.camera);
@@ -710,9 +721,11 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     }
     if (floating) trainRoot.position.y = FLOAT_Y + Math.sin(t * 1.6) * 0.07;
     if (state === 'train' && !down && Math.abs(rotVel) > 0.0002) {
-      rotVel *= 0.94;
-      train.rotation.y += rotVel;
-      trackRotation(rotVel);
+      // rotVel = putaran per "frame 60 Hz"; skala dengan dt supaya sama di 60 Hz maupun 120 Hz
+      const k = dt * 60;
+      rotVel *= Math.pow(0.94, k);
+      train.rotation.y += rotVel * k;
+      trackRotation(rotVel * k);
     }
     if (state === 'parts') {
       const pulse = 0.12 + Math.sin(t * 3) * 0.08;
@@ -764,8 +777,8 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     enterStreet,
     enterTV,
     reset,
-    start() { if (running) return; running = true; resize(); clock.start(); frame(); },
-    stop() { running = false; cancelAnimationFrame(raf); reset(); shop?.leave(); street?.leave(); },
+    start() { if (running) return; running = true; resize(); clock.start(); lastT = 0; frame(); },
+    stop() { running = false; cancelAnimationFrame(raf); raf = 0; reset(); shop?.leave(); street?.leave(); },
   };
 }
 

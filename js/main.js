@@ -26,7 +26,12 @@ const el = {
 /* ---------------- HUD ---------------- */
 for (let i = 1; i <= TOTAL; i++) el.progress.append(h('span', { class: 'dot', 'data-n': i }));
 el.startTitle.textContent = CONFIG.recipient;
-$('startGasing').replaceWith(createGasing3D({ className: 'start-gasing', label: 'Karakter Gasing' }));
+const startGasing = createGasing3D({ className: 'start-gasing', label: 'Karakter Gasing' });
+$('startGasing').replaceWith(startGasing);
+// Layar awal: Gasing melambai halus, lalu mengulang tiap ±8 detik sampai "Mulai" ditekan (timer di-kill di begin())
+let waveCall = null;
+const wave = () => { startGasing.gesture?.('wave'); waveCall = gsap.delayedCall(8, wave); };
+waveCall = gsap.delayedCall(1.0, wave);
 
 let stage = 0;      // scene yang sedang ditampilkan (1–12), ikut berubah saat alur 3D maju sendiri
 let debugPanel = null;
@@ -285,6 +290,24 @@ async function setupMusic() {
   });
 }
 
+/* ---------------- Jeda otomatis saat tab / aplikasi tidak aktif ---------------- */
+// Semua <video>/<audio> (termasuk yang tidak ada di DOM, mis. video TV 3D) didaftarkan saat play(),
+// lalu dijeda saat tab disembunyikan dan dilanjutkan saat kembali. Loop render 3D punya jeda sendiri (world3d.js).
+const mediaSeen = new Set();
+const mediaPaused = new Set();
+const nativePlay = HTMLMediaElement.prototype.play;
+HTMLMediaElement.prototype.play = function (...args) { mediaSeen.add(this); return nativePlay.apply(this, args); };
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    for (const m of mediaSeen) if (!m.paused && !m.ended) { m.pause(); mediaPaused.add(m); }
+    if (!params.has('debug')) gsap.globalTimeline.pause();
+  } else {
+    for (const m of mediaPaused) m.play().catch(() => {});
+    mediaPaused.clear();
+    gsap.globalTimeline.resume();
+  }
+});
+
 /* ---------------- Start ---------------- */
 const params = new URLSearchParams(location.search);
 const startScene = Math.min(TOTAL, Math.max(1, parseInt(params.get('scene') ?? '1', 10) || 1));
@@ -294,6 +317,7 @@ let started = false;
 async function begin(n) {
   if (started) return;
   started = true;
+  waveCall?.kill(); waveCall = null;
   el.startBtn.disabled = true;
   getWorld().catch((err) => console.warn('3D preload gagal:', err)); // preload selama scene 2D
   await musicReady;

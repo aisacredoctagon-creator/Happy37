@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { gsap } from 'gsap';
-import { createGasing3D, bagMouthOffset } from './gasing3d.js';
+import { createGasing3D, bagMouthOffset, GESTURE_TIMING } from './gasing3d.js';
 import { mediaExists } from './assets.js';
 import { CONFIG } from './config.js';
 
@@ -36,6 +36,10 @@ const TV_ROT = -0.6;                                             // menghadap ke
 const TV_FACE = new THREE.Vector3(Math.sin(TV_ROT), 0, Math.cos(TV_ROT));
 const TV_SCREEN = { x: -0.12, y: 1.18, z: 0.41, w: 0.66, h: 0.5 };   // koordinat lokal TV
 const TV_SCREEN_W = TV_POS.clone().add(new THREE.Vector3(TV_SCREEN.x, TV_SCREEN.y, TV_SCREEN.z).applyAxisAngle(Y_AXIS, TV_ROT));
+// Scene 11: bola jatuh saat Gasing masih berjalan menuju TV, ketika progres jalan (0..1) mencapai nilai ini
+const BALL_DROP_AT = 0.55;
+const MARVEL_SPEED = 1.6;                         // scene 12: kecepatan gestur 'marvel' (1 = tempo normal; > 1 = lebih cepat, tetap terbaca jelas)
+const BALL_ROLL_T = 4.4;                          // detik bola menggelinding dari tas ke depan TV
 const TV_PATH = { from: new THREE.Vector3(-5.0, 0, 3.3), to: new THREE.Vector3(-0.35, 0, 2.3) };   // jalur Gasing
 const ACTOR_ASPECT = 1000 / 1193;                                // lebar/tinggi kotak elemen Gasing
 const BALL_R = 0.11;
@@ -1075,7 +1079,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     killActor();
     actorWrap = document.createElement('div');
     actorWrap.className = 'shop-actors';
-    actor = createGasing3D({ label: tv ? 'Gasing menjinjing tas tenis' : 'Gasing masuk ke toko antik', className: 'shop-gasing', yaw: 0.55, bag: tv });
+    actor = createGasing3D({ label: tv ? 'Gasing menjinjing tas tenis' : 'Gasing masuk ke toko antik', className: 'shop-gasing', yaw: 0.55, bag: true });   // tas di punggung juga di scene 4
     actorWrap.append(actor);
     if (tv) {
       ballEl = document.createElement('i');
@@ -1116,12 +1120,28 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     el.style.transform =
       `translate3d(${(sx - bw / 2).toFixed(1)}px, ${(sy + foot * baseH * s - baseH).toFixed(1)}px, 0) rotate(${tilt.toFixed(2)}deg) scale(${s.toFixed(4)})`;
   }
+  // Laporkan kecepatan Gasing (relatif kamera) supaya badannya menghadap arah gerak. Lompatan posisi (spawn/reset) diabaikan.
+  const mv = { x: null, z: null, t: 0 };
+  function reportMove(x, z, t) {
+    if (!actor) { mv.x = null; return; }
+    const dt = t - mv.t;
+    if (mv.x != null && dt > 1e-4 && dt < 0.25) {
+      const dx = x - mv.x, dz = z - mv.z;
+      if (Math.hypot(dx, dz) < 1.5) {
+        const e = camera.matrixWorld.elements;          // kolom 0 = kanan kamera, kolom 2 = menuju penonton
+        const rl = Math.hypot(e[0], e[2]) || 1, bl = Math.hypot(e[8], e[10]) || 1;
+        actor.move?.((dx * e[0] + dz * e[2]) / rl / dt, (dx * e[8] + dz * e[10]) / bl / dt);
+      }
+    }
+    mv.x = x; mv.z = z; mv.t = t;
+  }
   function placeActor(t) {
     if (!actor) return;
     const u = actorState.u;
     const weave = Math.sin(u * Math.PI * 3.2) * 0.22 * (1 - u);
     const x = THREE.MathUtils.lerp(walkPath.from.x, walkPath.to.x, u);
     const z = THREE.MathUtils.lerp(walkPath.from.z, walkPath.to.z, u) + weave;
+    reportMove(x, z, t);
     const tilt = actorState.walking ? Math.sin(t * 7.5) * 2.2 : 0;
     standAt(actor, pw.set(x, 0, z), ACTOR_H, ACTOR_ASPECT, ACTOR_FOOT, tilt, actorState.fade);
     if (ballEl) placeBall();
@@ -1219,6 +1239,8 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     state = 'ready';
     gsap.to(markerMat, { opacity: 1, duration: 0.5 });
     ui.hint('Ketuk koper di etalase');
+    // satu gestur: menunjuk koper setelah jeda (hanya kalau koper belum diketuk)
+    sleep(GESTURE_TIMING.lead).then(() => { if (my === runId && state === 'ready') actor?.gesture('pointCase'); });
   }
 
   /** Koper diketuk: penutup kaca terangkat, cahaya naik, Gasing memudar — dan kamera diserahkan ke world3d (tanpa fade). */
@@ -1278,9 +1300,12 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
 
   /** Bola keluar dari tas, memantul, lalu menggelinding ke depan TV. Resolve saat berhenti. */
   function dropBall() {
+    // titik jatuh = posisi Gasing SAAT INI (boleh sedang berjalan), bukan titik akhir jalur
+    const au = actorState.u, weave0 = Math.sin(au * Math.PI * 3.2) * 0.22 * (1 - au);
+    const ax = THREE.MathUtils.lerp(walkPath.from.x, walkPath.to.x, au), az = THREE.MathUtils.lerp(walkPath.from.z, walkPath.to.z, au) + weave0;
     // bola keluar dari mulut tas yang menggantung di sarung tangan kiri Gasing (posisi relatif ke kotak elemen Gasing)
-    const mouth = bagMouthOffset(ACTOR_ASPECT);
-    const bx = walkPath.to.x + mouth.x * ACTOR_H, bz = walkPath.to.z + 0.05;
+    const mouth = actor?.bagMouthOffset?.(ACTOR_ASPECT) ?? bagMouthOffset(ACTOR_ASPECT);   // posisi aktual (ikut arah hadap Gasing)
+    const bx = ax + mouth.x * ACTOR_H, bz = az + 0.05;
     const startY = (mouth.y - ACTOR_FOOT) * ACTOR_H;
     const bounce = gsap.parseEase('bounce.out');
     let said = false;
@@ -1297,7 +1322,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     apply();
     return new Promise((resolve) => {
       ballTl = gsap.timeline({ onComplete: () => { ballTl = null; resolve(); } })
-        .to(ballSt, { h: 1, duration: 3.6, ease: 'power2.out', onUpdate: apply }, 0)
+        .to(ballSt, { h: 1, duration: BALL_ROLL_T, ease: 'power1.out', onUpdate: apply }, 0)   // kecepatan awal ≈ kecepatan jalan Gasing (momentum), lalu melambat
         .to(ballSt, { v: 1, duration: 1.5, ease: 'none', onUpdate: apply }, 0);
     });
   }
@@ -1328,6 +1353,8 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
       video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
     }
     ui.confetti?.();
+    // bersorak, lalu melambai terima kasih (tangan kanan saja; tas tetap dijinjing)
+    actor?.gesture('marvel', { speed: MARVEL_SPEED });   // satu gestur: kagum/kaget melihat TV, dipercepat
     flyTo('tvMid', 2.6, 'power2.inOut');
     await sleep(1.5);
     if (my !== runId) return;
@@ -1372,23 +1399,25 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
       Object.assign(ball, { vis: true, x: BALL_END.x, y: BALL_R, z: BALL_END.z });
       await sleep(0.8);
     } else {
+      let dropping = null;
       const walk = new Promise((resolve) => {
         walkTween = gsap.to(actorState, {
           u: 1, duration: 3.8, delay: pose ? 1.6 : 0.6, ease: 'power1.out',
           onStart: () => { actorState.walking = true; actor?.setState?.('walk'); },
+          onUpdate: () => {
+            if (dropping || actorState.u < BALL_DROP_AT) return;       // titik pemicu: bola jatuh MENDADAK, jalan tidak berhenti
+            ui.caption(CONFIG.captions[11]);
+            actor?.wobble();                                           // tas tersentak
+            actor?.gesture('startle');                                 // kaget
+            dropping = dropBall();
+          },
           onComplete: () => { actorState.walking = false; actor?.setState?.('idle'); walkTween = null; resolve(); },
         });
       });
       await Promise.all([camDone, walk]);
       if (my !== runId) return;
-      actor?.hop();                       // tas ikut terayun
-      await sleep(0.7);
-      if (my !== runId) return;
-      ui.caption(CONFIG.captions[11]);
-      actor?.wobble();                    // senggol tas sebelum bola keluar
-      await sleep(0.45);
-      if (my !== runId) return;
-      await dropBall();
+      if (!dropping) dropping = dropBall();                          // jaga-jaga bila titik pemicu terlewat
+      await dropping;
       if (my !== runId) return;
       await sleep(0.5);
     }

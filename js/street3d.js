@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { gsap } from 'gsap';
-import { createGasing3D } from './gasing3d.js';
+import { createGasing3D, GESTURE_TIMING } from './gasing3d.js';
 import { CONFIG } from './config.js';
 import { rng, std, box, put, mesh, canvasTex, markerTexture, dotTexture } from './shop3d.js';
 
@@ -907,8 +907,24 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     el.style.transform =
       `translate3d(${(sx - bw / 2).toFixed(1)}px, ${(sy + foot * baseH * s - baseH).toFixed(1)}px, 0) rotate(${tilt.toFixed(2)}deg) scale(${s.toFixed(4)})`;
   }
+  // Laporkan kecepatan Gasing (relatif kamera) supaya badannya menghadap arah gerak. Lompatan posisi (spawn/reset) diabaikan.
+  const mv = { x: null, z: null, t: 0 };
+  function reportMove(x, z, t) {
+    if (!actor) { mv.x = null; return; }
+    const dt = t - mv.t;
+    if (mv.x != null && dt > 1e-4 && dt < 0.25) {
+      const dx = x - mv.x, dz = z - mv.z;
+      if (Math.hypot(dx, dz) < 1.5) {
+        const e = camera.matrixWorld.elements;          // kolom 0 = kanan kamera, kolom 2 = menuju penonton
+        const rl = Math.hypot(e[0], e[2]) || 1, bl = Math.hypot(e[8], e[10]) || 1;
+        actor.move?.((dx * e[0] + dz * e[2]) / rl / dt, (dx * e[8] + dz * e[10]) / bl / dt);
+      }
+    }
+    mv.x = x; mv.z = z; mv.t = t;
+  }
   function placeActor(t) {
     if (!actor) return;
+    reportMove(A.x, A.z, t);
     const tilt = A.walking ? Math.sin(t * 7.5) * 2.2 : 0;
     const y = A.z < WALL_Z + 2.2 ? DOOR.y : 0;       // di teras sedikit lebih tinggi
     standAt(actor, pw.set(A.x, y, A.z), ACTOR_H, 1000 / 1193, ACTOR_FOOT, tilt, A.fade);
@@ -988,6 +1004,8 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     state = 'cart';
     gsap.to(cartM, { o: 1, duration: 0.5 });
     ui.hint('Ketuk gerobak soto');
+    // satu gestur: menunjuk gerobak setelah jeda (hanya kalau gerobak belum diketuk)
+    sleep(GESTURE_TIMING.lead).then(() => { if (my === runId && state === 'cart') actor?.gesture('pointCart'); });
   }
 
   /** Gerobak diketuk: Gasing menghampiri, kamera mendekat, makan soto sambil meloncat-loncat senang. */
