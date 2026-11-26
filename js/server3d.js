@@ -454,11 +454,32 @@ export function buildSotoServer() {
   gloveR.rotation.z = -0.35;
   root.add(gloveR);
 
+  /* ---- Mangkuk soto yang disodorkan (hanya tampil saat serve()) ---- */
+  const bowl = new THREE.Group();
+  {
+    const shell = part(new THREE.SphereGeometry(0.17, 22, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), toon(0xf4f1e8), 0.01);
+    shell.children[0].material.side = THREE.DoubleSide;
+    bowl.add(shell);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.012, 8, 24), toon(0x3a6b8a));
+    rim.rotation.x = Math.PI / 2;
+    bowl.add(rim);
+    const soup = new THREE.Mesh(new THREE.CircleGeometry(0.155, 22), toon(0xc9892f));
+    soup.rotation.x = -Math.PI / 2; soup.position.y = -0.025;
+    bowl.add(soup);
+    const foot = part(new THREE.CylinderGeometry(0.06, 0.07, 0.03, 14), toon(0xf4f1e8), 0.008);
+    foot.position.y = -0.185;
+    bowl.add(foot);
+  }
+  bowl.visible = false;
+  root.add(bowl);
+
   // garis tinta & bayangan: karakter tidak memberi/menerima bayangan (di bawah terpal tetap cerah)
   group.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
 
   /* ---- Animasi ---- */
-  const fx = { hop: 0, wave: 0 };
+  const fx = { hop: 0, wave: 0, give: 0, bowl: 0 };
+  // sodoran mangkuk: sarung tangan kanan menjulur ke depan-kanan (ke arah Gasing) + badan condong sedikit (satuan model, kerangka root)
+  const GIVE = { gx: 0.05, gy: -0.5, gz: 0.6, lx: 0.35, lz: 0.4 };
   let wavePhase = 0;
   let nextBlink = 2 + Math.random() * 2, blinkT = -1;
   function update(t, dt = 1 / 60) {
@@ -472,6 +493,21 @@ export function buildSotoServer() {
     gloveR.position.y = 0.52 + Math.sin(wavePhase * 0.5) * 0.02 + fx.wave * 0.1;
     gloveL.position.y = 0.12 + Math.sin(t * 2.1 + 1) * 0.03;
     gloveL.rotation.z = 0.5 + Math.sin(t * 1.6) * 0.06;
+    // sodoran mangkuk (give 0 → 1): tangan kanan menjulur & tegak menopang mangkuk, badan condong ke depan
+    const gv = fx.give;
+    if (gv > 0 || fx.bowl > 0) {
+      gloveR.position.x = 0.9 + gv * GIVE.gx;
+      gloveR.position.y += gv * GIVE.gy;
+      gloveR.position.z = 0.12 + gv * GIVE.gz;
+      gloveR.rotation.z += (0.05 - gloveR.rotation.z) * gv;
+      root.position.x = gv * GIVE.lx;
+      root.position.z = gv * GIVE.lz;
+      bowl.visible = fx.bowl > 0.01;
+      bowl.scale.setScalar(Math.max(0.001, fx.bowl));
+      bowl.position.set(gloveR.position.x - 0.03, gloveR.position.y + 0.17, gloveR.position.z + 0.16);
+    } else {
+      root.position.x = 0; root.position.z = 0; bowl.visible = false;
+    }
     // kedip
     if (blinkT < 0 && t > nextBlink) blinkT = 0;
     if (blinkT >= 0) {
@@ -485,9 +521,28 @@ export function buildSotoServer() {
     gsap.fromTo(fx, { hop: 0 }, { hop: 1, duration: 0.22, ease: 'power2.out', yoyo: true, repeat: 1 });
     gsap.fromTo(fx, { wave: 0 }, { wave: 1, duration: 0.6, yoyo: true, repeat: 1, repeatDelay: 1.2 });
   }
+  /**
+   * Menyajikan soto: mangkuk muncul di tangan → tangan menjulur ke arah pembeli → onReach() (tangan sudah di ujung) →
+   * ditahan sebentar → mangkuk dilepas (pembeli sudah memegangnya sendiri) → tangan kembali.
+   * Mengembalikan Promise yang selesai saat mangkuk dilepas.
+   */
+  function serve(onReach) {
+    gsap.killTweensOf(fx, 'give,bowl');
+    return new Promise((resolve) => {
+      const tl = gsap.timeline();
+      tl.fromTo(fx, { bowl: 0 }, { bowl: 1, duration: 0.3, ease: 'back.out(2)' })
+        .to(fx, { give: 1, duration: 0.8, ease: 'power2.inOut' }, '+=0.1')
+        .add(() => onReach?.())
+        .to({}, { duration: 0.7 })
+        .to(fx, { bowl: 0, duration: 0.15, ease: 'power1.in' })
+        .add(() => resolve())
+        .to(fx, { give: 0, duration: 0.6, ease: 'power2.inOut' }, '+=0.1');
+    });
+  }
+  function resetServe() { gsap.killTweensOf(fx, 'give,bowl'); fx.give = 0; fx.bowl = 0; }
   function dispose() {
     group.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); } });
     gsap.killTweensOf(fx);
   }
-  return { group, update, hop, fx, dispose };
+  return { group, update, hop, serve, resetServe, fx, dispose };
 }

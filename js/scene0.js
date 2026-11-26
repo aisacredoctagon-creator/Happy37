@@ -83,7 +83,7 @@ export function mountScene0(root, startBtn) {
   const busImg = h('img', { src: S0.bus, alt: '', draggable: 'false', decoding: 'async' });
   const bus = h('div', { class: 's0-layer s0-bus', 'aria-hidden': 'true', style: box(...BUS) }, busImg);
 
-  const gasing = createGasing3D({ label: 'Gasing menunggu di depan pintu stasiun', className: 's0-gasing' });
+  const gasing = createGasing3D({ label: 'Gasing menunggu di depan pintu stasiun sambil membawa tas tenis', className: 's0-gasing', yaw: 0.35, bag: true, bagSide: 1.1 });   // tas raket di punggung, digeser ke kiri layar supaya terlihat (nilai sama dengan S12_BAG_SIDE di scenes2d.js)
   gasing.style.cssText = `left:${pct(GAS.cx - GAS_W / 2, FW)};bottom:${pct(FH - GAS.feet, FH)};height:${pct(GAS.h, FH)}`;
   startBtn.classList.add('s0-btn');   // tersembunyi sampai Gasing selesai diturunkan bus (class is-in)
   startBtn.setAttribute('aria-label', 'Mulai Perjalanan');
