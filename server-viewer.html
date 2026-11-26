@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Penjual Soto 3D — viewer</title>
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js"
+    }
+  }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: radial-gradient(circle at 50% 40%, #f6e7c8, #d9bf8f); font-family: Nunito, "Trebuchet MS", sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  .bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center;
+         background: rgba(40, 24, 14, 0.82); color: #fff4e2; padding: 8px 12px; border-radius: 999px; font-size: 14px; }
+  .bar button { font: inherit; border: 0; border-radius: 999px; padding: 6px 14px; background: #f39a45; color: #2b160a; font-weight: 700; cursor: pointer; }
+  .bar label { display: flex; gap: 6px; align-items: center; }
+  .tip { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); color: #5a3a20; font-size: 13px; opacity: 0.8; }
+</style>
+</head>
+<body>
+<div class="tip">Seret untuk memutar · scroll / cubit untuk zoom</div>
+<div class="bar">
+  <button id="hop">Loncat!</button>
+  <label><input type="checkbox" id="spin"> Putar otomatis</label>
+</div>
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { buildSotoServer } from './js/server3d.js';
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  document.body.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+  camera.position.set(0, 0.8, 4.4);
+
+  // pencahayaan sama dengan jalan Surabaya (scene 3)
+  scene.add(new THREE.HemisphereLight(0xdcecff, 0xa98b62, 0.9));
+  const sun = new THREE.DirectionalLight(0xffdfae, 2.6);
+  sun.position.set(-9, 12, 11);
+  scene.add(sun);
+
+  const server = buildSotoServer();
+  scene.add(server.group);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.4, 0);
+  controls.enableDamping = true;
+  controls.minDistance = 1.6;
+  controls.maxDistance = 9;
+  controls.autoRotateSpeed = 2.5;
+  controls.update();
+
+  document.getElementById('hop').onclick = () => server.hop();
+  document.getElementById('spin').onchange = (e) => { controls.autoRotate = e.target.checked; };
+
+  function resize() {
+    renderer.setSize(innerWidth, innerHeight, false);
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  let last = performance.now();
+  renderer.setAnimationLoop((now) => {
+    server.update(now / 1000, (now - last) / 1000);
+    last = now;
+    controls.update();
+    renderer.render(scene, camera);
+  });
+</script>
+</body>
+</html>

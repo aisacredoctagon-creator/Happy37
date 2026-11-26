@@ -64,6 +64,45 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
 .btn-ghost { background: rgba(27, 19, 14, .7); box-shadow: 0 4px 0 #000, 0 10px 24px rgba(0, 0, 0, .3); backdrop-filter: blur(6px); }
 .btn-big { font-size: clamp(18px, 2.2vw, 22px); padding: 16px 30px; }
+/* tombol aksi di pojok kanan bawah (mis. "Turun" di scene 2) */
+.btn.is-corner {
+  position: fixed;
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(16px + var(--safe-b));
+  display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+  font-size: clamp(22px, 2.6vw, 32px);
+  min-width: clamp(190px, 20vw, 280px);
+  padding: .65em 1.5em .65em 1.7em;
+  box-shadow: 0 6px 0 var(--tomato-dark), 0 14px 30px rgba(0, 0, 0, .35);
+}
+.btn.is-corner:active { box-shadow: 0 2px 0 var(--tomato-dark), 0 8px 18px rgba(0, 0, 0, .3); }
+.btn-arrow { --tr: .2em; width: 1.15em; height: 1.15em; flex: none; animation: btn-arrow-right 1s ease-in-out infinite; }
+@keyframes btn-arrow-right {
+  0%, 100% { transform: translateX(calc(var(--tr) * -.7)); }
+  50% { transform: translateX(var(--tr)); }
+}
+/* hover/fokus: tombol terangkat & membesar sedikit (properti `translate`/`scale` terpisah dari transform GSAP),
+   panah meluncur lebih jauh & lebih cepat, kilau menyapu tombol */
+.btn.is-corner {
+  overflow: hidden;
+  transition: translate .18s ease, scale .18s ease, filter .18s ease, box-shadow .18s ease;
+}
+.btn.is-corner::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .45) 50%, transparent 65%);
+  translate: -120% 0;
+}
+.btn.is-corner:hover, .btn.is-corner:focus-visible {
+  translate: 0 -4px; scale: 1.06; filter: brightness(1.08) saturate(1.1);
+  box-shadow: 0 8px 0 var(--tomato-dark), 0 18px 34px rgba(0, 0, 0, .4);
+}
+.btn.is-corner:hover::after, .btn.is-corner:focus-visible::after { translate: 120% 0; transition: translate .6s ease; }
+.btn.is-corner:hover .btn-arrow, .btn.is-corner:focus-visible .btn-arrow { --tr: .45em; animation-duration: .55s; }
+.btn.is-corner:active { translate: 0 2px; scale: .98; }
+@media (prefers-reduced-motion: reduce) {
+  .btn-arrow, .btn.is-corner:hover .btn-arrow { animation: none; }
+  .btn.is-corner:hover::after, .btn.is-corner:focus-visible::after { transition: none; }
+}
 
 .icon-btn {
   width: 44px; height: 44px; border-radius: 50%;
@@ -166,6 +205,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: 18px; line-height: 1;
 }
 .note-close:focus-visible { outline: 3px solid var(--mustard); outline-offset: 2px; }
+
+/* Mode "terukir": teks ada di model 3D, jadi hanya tombol tutup yang melayang di atas kanvas */
+.note.is-engraved { background: none; backdrop-filter: none; pointer-events: none; place-items: start end; padding: 64px 16px 0; }
+.note.is-engraved .note-paper {
+  width: auto; max-height: none; overflow: visible; padding: 0; background: none; box-shadow: none; transform: none;
+  pointer-events: none;
+}
+.note.is-engraved .note-paper > :not(.note-close) { display: none; }
+.note.is-engraved .note-close {
+  position: static; pointer-events: auto; cursor: pointer;
+  width: 48px; height: 48px; font-size: 20px;
+  background: rgba(27, 19, 14, .82); color: var(--paper);
+  border: 1px solid rgba(246, 239, 226, .35); box-shadow: 0 6px 18px rgba(0, 0, 0, .4);
+}
 
 .error {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
@@ -291,16 +344,52 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .scene { position: absolute; inset: 0; overflow: hidden; background: #2a1c12; }
 
 /* ---------- Scene 1: Tiket ---------- */
-.s1-gasing { position: absolute; left: 11%; bottom: 4%; height: 64%; }
+/* Panorama 3:1 dipotong "cover" → fokus awal digeser ke kanan (72%) supaya Monas terlihat,
+   TAPI papan petunjuk (Stasiun Pasarturi / Gambir, x ≈ 28%–53% lebar gambar) dijadikan jangkar:
+   posisi digeser (clamp) sehingga papan selalu masuk layar penuh di resolusi/rasio apa pun.
+   Layar yang sangat sempit (potret): panggung diperkecil (maks 3,76× lebar layar) dan menempel ke bawah.
+   Langit, awan, dan stasiun berbagi satu kotak (.s1-stage) agar posisinya selalu sejajar. */
+.s1 { container-type: size; background: #3aa8ff; }
+.s1-stage {
+  --sign-l: .28;   /* tepi kiri papan, fraksi lebar gambar */
+  --sign-r: .53;   /* tepi kanan papan */
+  --sign-m: 3cqw;  /* margin aman dari tepi layar */
+  --w: min(max(100cqw, calc(100cqh * 3)), calc((100cqw - 2 * var(--sign-m)) / (var(--sign-r) - var(--sign-l))));
+  --h: calc(var(--w) / 3);
+  position: absolute;
+  width: var(--w); height: var(--h);
+  top: clamp(100cqh - var(--h), (100cqh - var(--h)) * .5, 0px);
+  left: clamp(var(--sign-m) - var(--sign-l) * var(--w), (100cqw - var(--w)) * .72, 100cqw - var(--sign-m) - var(--sign-r) * var(--w));
+  container-type: inline-size;
+}
+.s1-sky, .s1-fg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; user-select: none; }
+.s1-clouds { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.s1-clouds img {
+  position: absolute; left: 0; height: auto; max-width: none; user-select: none;
+  opacity: .9; will-change: transform;
+  animation: s1-cloud-drift linear infinite;
+}
+/* 1cqw = 1% lebar panggung: awan masuk dari luar tepi kiri, keluar lewat tepi kanan, lalu mengulang */
+@keyframes s1-cloud-drift {
+  from { transform: translate3d(-32cqw, 0, 0); }
+  to { transform: translate3d(104cqw, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .s1-clouds img { animation-play-state: paused; } }
+.s1-gasing { position: absolute; left: 3%; bottom: 4%; height: 64%; }
 .s1-ticket-wrap {
-  position: absolute; right: 6%; top: 50%;
-  width: min(520px, 50vw);
-  transform: translateY(-46%) rotate(-4deg);
+  position: absolute; right: 5%; top: 50%;
+  width: min(660px, 50vw);  /* 50vw: supaya tidak menutupi papan stasiun di layar sempit */
+  --tilt-x: 0deg; --tilt-y: 0deg;   /* kemiringan 3D saat hover (diisi JS mengikuti kursor) */
+  transform: perspective(900px) translateY(-46%) rotate(-4deg) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  transition: transform .25s ease-out;
   filter: drop-shadow(0 24px 30px rgba(0, 0, 0, .35));
 }
 .ticket {
+  --tk-accent: #f26a0f;      /* SATU-SATUNYA warna aksen tiket (oranye tegas, senada logo) */
+  --tk-gap: 14px;           /* jarak sama: garis putus-putus ↔ baris teks ↔ barcode */
+  --tk-pad-l: 36px;          /* margin kiri teks (di luar pita aksen) */
   position: relative; display: block; width: 100%; text-align: left;
-  color: var(--ink);
+  color: #000;
   background: var(--paper) !important;
   border-radius: 14px !important;
   box-shadow: 0 24px 50px rgba(0, 0, 0, .35);
@@ -308,30 +397,77 @@ button { font: inherit; color: inherit; cursor: pointer; }
   -webkit-mask: radial-gradient(circle 12px at 0 62%, transparent 98%, #000) , radial-gradient(circle 12px at 100% 62%, transparent 98%, #000);
   -webkit-mask-composite: source-in; mask-composite: intersect;
 }
-.ticket-head {
-  display: flex; justify-content: space-between; gap: 8px;
-  padding: 12px 18px; border-radius: 14px 14px 0 0;
-  background: var(--teal); color: var(--cream);
-  font-family: var(--font-display); font-size: clamp(11px, 1.3vw, 14px); letter-spacing: .08em;
+/* pita aksen di sisi kiri tiket */
+.ticket::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 14px;
+  border-radius: 14px 0 0 14px;
+  background: var(--tk-accent);
 }
-.ticket-train { opacity: .8; letter-spacing: 0; }
-.ticket-body { padding: 14px 18px 8px; }
+/* Kepala tiket: logo (latar putih → multiply supaya menyatu dengan kertas) di kiri, nama kereta di kanan */
+.ticket-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 22px 8px var(--tk-pad-l); border-radius: 14px 14px 0 0;
+  border-bottom: 4px solid var(--tk-accent);
+}
+.ticket-logo { display: block; height: clamp(58px, 7vw, 84px); width: auto; mix-blend-mode: multiply; user-select: none; }
+.ticket-train { text-align: right; }
+.ticket-train small { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; opacity: .6; }
+.ticket-train b { font-family: var(--font-display); font-size: clamp(13px, 1.5vw, 17px); white-space: nowrap; }
+.ticket-body { padding: 14px 22px 0 var(--tk-pad-l); }
 .ticket-route { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.ticket-route > div:not(.ticket-arrow) { flex: 1; min-width: 0; }
 .ticket-route small, .ticket-meta small { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .6; }
-.ticket-route strong { font-family: var(--font-display); font-size: clamp(20px, 2.6vw, 30px); }
-.ticket-route .dest { color: var(--tomato); }
-.ticket-arrow { font-size: 26px; opacity: .5; }
-.ticket-meta { display: grid; grid-template-columns: repeat(3, auto); gap: 10px 18px; border-top: 2px dashed rgba(42, 28, 18, .25); padding-top: 10px; }
+.ticket-route strong { display: block; font-family: var(--font-display); font-size: clamp(16px, 2vw, 22px); line-height: 1.15; }
+.ticket-city { display: block; font-size: clamp(12px, 1.4vw, 15px); font-weight: 700; color: var(--tk-accent); }
+.ticket-arrow { font-size: 26px; color: var(--tk-accent); }
+.ticket-meta {
+  display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 10px 18px;
+  border-top: 2px dashed var(--tk-accent); padding: var(--tk-gap) 12px 0; /* jarak garis putus-putus → teks = teks → barcode */
+  border-radius: 0 0 8px 8px;
+}
 .ticket-meta b { font-size: clamp(13px, 1.4vw, 15px); }
 .ticket-barcode {
-  height: 34px; margin: 10px 18px 16px;
-  background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 4px, var(--ink) 4px 7px, transparent 7px 9px, var(--ink) 9px 10px, transparent 10px 13px);
-  opacity: .85;
+  height: 34px; margin: var(--tk-gap) 22px 16px var(--tk-pad-l);
+  background: repeating-linear-gradient(90deg, var(--tk-accent) 0 2px, transparent 2px 4px, var(--tk-accent) 4px 7px, transparent 7px 9px, var(--tk-accent) 9px 10px, transparent 10px 13px);
+  opacity: .9;
+}
+/* Penarik perhatian tiket (menggantikan outline berdenyut .hotspot):
+   melayang naik-turun (properti `translate` terpisah dari transform GSAP/rotate),
+   cahaya (glow) putih-biru langit di belakang tiket, dan kilau (shine) menyapu diagonal. */
+.s1-ticket-wrap.attn { animation: tk-float 3s ease-in-out infinite; }
+.s1-ticket-wrap.attn::before {
+  content: ""; position: absolute; inset: -4% -3%; z-index: -1; pointer-events: none;
+  border-radius: 24px;
+  /* putih-kebiruan: menyatu dengan langit siang & cahaya matahari peron, tetap kontras di atas langit biru */
+  background: rgba(236, 247, 255, .75);
+  box-shadow: 0 0 26px 10px rgba(214, 238, 255, .65), 0 0 56px 20px rgba(150, 210, 255, .4);
+  filter: blur(8px);
+  animation: tk-glow 2.2s ease-in-out infinite;
+}
+.s1-ticket-wrap.attn .ticket::after {
+  content: ""; position: absolute; inset: 0; border-radius: 14px; pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, rgba(190, 225, 255, .35) 45%, rgba(255, 255, 255, .95) 50%, rgba(190, 225, 255, .35) 55%, transparent 62%) no-repeat;
+  background-size: 260% 100%;
+  background-position: 130% 0;
+  animation: tk-shine 6.5s ease-in-out infinite;
+}
+.s1-ticket-wrap.attn .ticket { transition: scale .25s ease, filter .25s ease; }
+.s1-ticket-wrap.attn .ticket:hover, .s1-ticket-wrap.attn .ticket:focus-visible { scale: 1.035; filter: brightness(1.06) saturate(1.1); }
+.s1-ticket-wrap.attn:hover::before { animation-duration: 1.2s; }
+@keyframes tk-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -12px; } }
+@keyframes tk-glow { 0%, 100% { opacity: .3; scale: .97; } 50% { opacity: .75; scale: 1.03; } }
+@keyframes tk-shine {
+  0%, 72% { background-position: 130% 0; }   /* jeda panjang, lalu satu sapuan ±1,8 dtk */
+  100% { background-position: -30% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .s1-ticket-wrap.attn, .s1-ticket-wrap.attn::before, .s1-ticket-wrap.attn .ticket::after { animation: none; }
+  .s1-ticket-wrap.attn::before { opacity: .8; }
 }
 .ticket-stamp {
   position: absolute; right: 18px; bottom: 26px;
   font-family: var(--font-display); font-weight: 700; font-size: clamp(18px, 2.2vw, 26px);
-  color: var(--tomato); border: 4px solid var(--tomato); border-radius: 10px;
+  color: var(--tk-accent); border: 4px solid var(--tk-accent); border-radius: 10px;
   padding: 4px 12px; opacity: 0; transform: rotate(-12deg);
   mix-blend-mode: multiply;
 }
@@ -343,28 +479,98 @@ button { font: inherit; color: inherit; cursor: pointer; }
     linear-gradient(to bottom, transparent 78%, rgba(0, 0, 0, .25) 78%, rgba(0, 0, 0, .25) 79%, transparent 79%),
     linear-gradient(160deg, #3c6b5c, #22433a);
 }
-.s2-window, .s2-frame {
-  position: absolute; left: 0; right: 0; margin: 0 auto;
-  top: calc(var(--hud-h) + 4%);
-  width: min(78vw, 1000px); aspect-ratio: 16 / 9; max-height: 64%;
+.s2 { container-type: size; }
+.s2-wall { background: #2b2f3a; }
+/* Interior kereta 1671×941 menutupi scene (cover); di HP portrait di-contain supaya jendela tidak terpotong */
+.s2-room {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: max(100cqw, calc(100cqh * 1671 / 941)); aspect-ratio: 1671 / 941;
 }
-.s2-window {
-  border-radius: 30px; overflow: hidden;
-  border: 14px solid #e2d6bd;
-  box-shadow: inset 0 0 40px rgba(0, 0, 0, .35), 0 20px 40px rgba(0, 0, 0, .35);
+.s2-room-img { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; user-select: none; }
+/* Lubang jendela pada gambar: x 16.8–83.3%, y 21.7–79.9%. Dibuat sedikit lebih besar; tepinya tertutup gambar. */
+.s2-window { position: absolute; left: 16%; top: 21%; width: 68%; height: 59.5%; overflow: hidden; }
+.s2-outside { position: absolute; inset: 0; container-type: size; overflow: hidden; background: #5bbcff; }
+/* Panggung parallax: 1 unit desain (referensi 2172×724) = --u. Tinggi jendela = 724 unit. */
+.s2-stage { --u: calc(100cqh / 724); position: absolute; inset: 0; overflow: hidden; }
+.s2-sky { position: absolute; inset: 0; background: linear-gradient(#4db4fb 0%, #6cc4ff 55%, #a5dcff 78%, #c9ecff 100%); }
+.s2-layer { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+.s2-strip {
+  display: flex; height: 100%; will-change: transform;
+  animation: s2-scroll linear infinite; animation-play-state: paused;
 }
-.s2-outside { position: absolute; inset: 0; background: linear-gradient(#9fd3e8, #f7e2b5); }
-.s2-track { display: flex; width: 200%; height: 100%; }
-.s2-view { width: 50%; height: 100%; flex: none; }
-.s2-view.is-placeholder { --tint: #a9cfd9; border-radius: 0; border-width: 0 2px 0 0; }
-.s2-poles {
-  position: absolute; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(90deg, transparent 0 260px, rgba(40, 30, 20, .55) 260px 268px, transparent 268px 520px);
-  animation: poles 1.2s linear infinite;
-}
-@keyframes poles { to { background-position: -520px 0; } }
+.s2.is-running .s2-strip { animation-play-state: running; }
+/* geser tepat 2 chunk ([A][A↔]) lalu ulang → mulus karena tepi cermin selalu cocok */
+@keyframes s2-scroll { to { transform: translate3d(calc(var(--u) * var(--period) * -1), 0, 0); } }
+.s2-chunk { position: relative; flex: none; height: 100%; }
+.s2-chunk.is-mirror { transform: scaleX(-1); }
+.s2-chunk.is-mirror img.keep-text { transform: scaleX(-1); } /* sprite bertulisan: balik lagi agar terbaca */
+.s2-chunk img, .s2-cloud { position: absolute; max-width: none; user-select: none; }
 .s2-glare { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, .25) 40%, transparent 50%); pointer-events: none; }
-.s2-gasing { position: absolute; left: 14%; bottom: 0; height: 52%; }
+.s2-gasing { position: absolute; left: 14%; bottom: 0; height: 52%; z-index: 2; }
+/* Poster di bingkai dinding. Bingkai ada di gambar interior (1671×941) dan sudah dipertinggi (potret ≈ 2:3, mendekati
+   rasio poster asli 1024×1536), jadi poster nyaris tidak di-crop: --cx/--cy/--cw/--ch = jendela potong dalam piksel
+   poster asli (rasio cw:ch harus = rasio bukaan). Tepi putih + sudut hitam kartu ikut terbuang. */
+.s2-poster {
+  position: absolute; overflow: hidden;
+  border-radius: 3% / 2%; pointer-events: none; background: #fff6e3;
+}
+/* Ukuran terukur dari gambar interior (piksel 1671×941), dibuat ±1,5 px lebih besar dari lukisan/kertas asli supaya
+   tidak ada sisa gambar bingkai yang mengintip di tepi (kiri: lukisan x 32–198, y 291–533; kanan: kertas x 1479–1643, y 290–535).
+   Rasio tiap sisi beda → jendela potong disesuaikan: kiri 168:246,5 → 934×1370; kanan 166:247 → 934×1390. */
+.s2-poster.is-left  { left: 1.885%;  top: 30.66%; width: 10.054%; height: 26.196%; --cx: 46; --cy: 90; --cw: 934; --ch: 1370; }
+.s2-poster.is-right { left: 88.48%;  top: 30.77%; width: 9.934%;  height: 26.248%; --cx: 46; --cy: 62; --cw: 934; --ch: 1390; }
+.s2-poster img {
+  position: absolute; max-width: none; user-select: none;
+  width: calc(1024 / var(--cw) * 100%); height: calc(1536 / var(--ch) * 100%);
+  left: calc(var(--cx) / var(--cw) * -100%); top: calc(var(--cy) / var(--ch) * -100%);
+}
+.s2-poster::after { /* kesan terpasang di dalam bingkai: bayangan tipis di tepi dalam */
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(60, 40, 30, .18), inset 0 2px 5px rgba(60, 40, 30, .22);
+}
+/* Botol di meja (ambang) bawah jendela: alasnya menapak di y≈85% gambar interior. Posisi & ukuran relatif ke .s2-room. */
+.s2-bottle {
+  position: absolute; left: 47.67%; bottom: 12.8%; height: 15%; aspect-ratio: 1058 / 1940;
+  transform-origin: 50% 100%; pointer-events: none;
+  animation: s2-bottle-shake .21s linear infinite; animation-play-state: paused;
+}
+.s2.is-running .s2-bottle { animation-play-state: running; }
+.s2-bottle::before { /* bayangan di meja */
+  content: ''; position: absolute; left: 6%; right: 6%; bottom: -3%; height: 6%;
+  border-radius: 50%; background: rgba(40, 40, 70, .28); filter: blur(2px);
+}
+.s2-bottle img { position: relative; display: block; width: 100%; height: 100%; user-select: none; }
+/* getar halus: sedikit naik-turun + miring, tidak teratur supaya terasa seperti roda kereta */
+@keyframes s2-bottle-shake {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  20%  { transform: translate(.5px, -1.2px) rotate(.5deg); }
+  40%  { transform: translate(-.4px, .3px) rotate(-.35deg); }
+  60%  { transform: translate(.3px, -.9px) rotate(.3deg); }
+  80%  { transform: translate(-.5px, .2px) rotate(-.5deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce) { .s2-bottle { animation: none; } }
+
+/* Pegangan tangan (tali + segitiga biru) — potongan terpisah dari gambar interior, digantung di kaitan pada batang.
+   Posisi/ukuran dalam % gambar interior (1671×941); transform-origin = titik kaitan di batang (di atas potongan). */
+.s2-strap { position: absolute; max-width: none; pointer-events: none; user-select: none; will-change: transform;
+  animation: s2-strap-swing var(--dur, 3.2s) ease-in-out var(--delay, 0s) infinite alternate,
+             s2-strap-jitter .21s linear infinite;
+  animation-play-state: paused; }
+.s2.is-running .s2-strap { animation-play-state: running; }
+.s2-strap.is-1 { left: 1.197%;  top: 8.183%;  width: 6.942%; height: 16.472%; transform-origin: 49.1% -12.3%; --amp: 1.9deg; --dur: 3.1s; --delay: -.4s; }
+.s2-strap.is-2 { left: 9.395%;  top: 14.984%; width: 6.224%; height: 11.902%; transform-origin: 51% -9.8%;   --amp: 2.2deg; --dur: 3.5s; --delay: -1.7s; }
+.s2-strap.is-3 { left: 84.62%;  top: 14.984%; width: 6.344%; height: 11.902%; transform-origin: 53.8% -8%;   --amp: 2.2deg; --dur: 3.3s; --delay: -.9s; }
+.s2-strap.is-4 { left: 92.46%;  top: 8.183%;  width: 6.942%; height: 16.472%; transform-origin: 53.4% -16.1%; --amp: 1.9deg; --dur: 3.7s; --delay: -2.4s; }
+/* ayunan searah gerak kereta (kiri ↔ kanan, sedikit asimetris) + getar kecil dari rel lewat properti `rotate` terpisah */
+@keyframes s2-strap-swing {
+  from { transform: rotate(calc(var(--amp) * -1)); }
+  to   { transform: rotate(calc(var(--amp) * .8)); }
+}
+@keyframes s2-strap-jitter {
+  0%, 100% { rotate: 0deg; } 25% { rotate: .22deg; } 50% { rotate: -.12deg; } 75% { rotate: .16deg; }
+}
+@media (prefers-reduced-motion: reduce) { .s2-strap { animation: none; } }
 
 /* ---------- Scene 3: Jalan Surabaya ---------- */
 .s3-sign {
@@ -497,10 +703,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .scene-label { font-size: 13px; }
 
   .s1-gasing { left: 6%; bottom: 20%; height: 40%; }
-  .s1-ticket-wrap { left: 6%; right: 6%; width: auto; top: calc(var(--hud-h) + 6%); transform: rotate(-3deg); }
+  .s1-ticket-wrap { left: 4%; right: 4%; width: auto; top: calc(var(--hud-h) + 6%); transform: perspective(900px) rotate(-3deg) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)); }
+  .ticket-meta { grid-template-columns: repeat(2, auto); }
 
-  .s2-window, .s2-frame { width: 90vw; aspect-ratio: 4 / 5; max-height: 52%; }
-  .s2-gasing { left: 4%; height: 36%; bottom: 14%; }
+  .s2-room { width: min(100cqw, calc(100cqh * 1671 / 941)); }
+  .s2-gasing { left: 4%; height: 36%; bottom: 14%; z-index: 2; }
 
   .s3-sign { left: 50%; transform: translateX(-50%); align-items: center; white-space: nowrap; }
   .s3-toko { right: 3%; top: 27%; bottom: auto; width: 46%; height: 32%; }
@@ -522,7 +729,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gasing > img, .s2-poles, .hotspot::after { animation: none; }
+  .gasing > img, .s2-strip, .hotspot::after { animation: none; }
 }
 
 /* ---------------- Debug panel (?debug) ---------------- */

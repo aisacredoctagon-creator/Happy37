@@ -17,15 +17,18 @@ const LOREM = [
 ];
 
 export const CONFIG = {
-  recipient: 'Pa Bram',
+  recipient: 'Pak Bram',
 
   ticket: {
-    name: 'Pa Bram',
-    date: '19 NOV 2026',
-    from: 'Jakarta',
-    to: 'Surabaya',
-    train: 'KA Gasing Ekspres',
-    seat: 'EKS-1 / 9A',
+    name: 'Pak Bram',
+    date: '30 NOV 2026',
+    from: 'Stasiun Gambir',
+    fromCity: 'Jakarta',
+    to: 'Stasiun Pasarturi',
+    toCity: 'Surabaya',
+    train: 'InterCity 225',
+    seat: 'TO-37 / 1A',
+    passengerType: 'Suite Class',
   },
 
   // Kode gembok koper (Scene 5)
@@ -43,10 +46,10 @@ export const CONFIG = {
     4: 'Di dalam toko antik… ada koper tua di etalase. Ketuk kopernya.',
     5: 'Kopernya terkunci. Ketuk bagian atas / bawah roda angka untuk mengubah kode.',
     6: 'Terbuka! Ada 9 bagian kereta dan cetakannya. Ketuk salah satu bagian.',
-    7: 'Ada tulisan kecil di bagian ini…',
-    8: 'Tutup catatan (✕) untuk memasang bagian ini ke cetakan.',
+    7: 'Ada tanda merah kecil di bagian ini… ada tulisan terukir di sana. Zoom sedekat-dekatnya!',
+    8: 'Tulisannya terukir di logam. Setelah selesai membaca, tutup (✕) untuk memasang bagian ini ke cetakan.',
     9: 'Keretanya jadi! Geser / drag untuk memutarnya 360°.',
-    10: 'Kalau sudah puas, tutup kopernya.',
+    10: 'Arahkan kursor ke bagian kereta, lalu ketuk untuk membaca suratnya. Kalau sudah puas, tutup kopernya.',
     // transisi 10 → 11 (kamera mundur dari koper, Gasing datang membawa tas tenisnya)
     t11: 'Kopernya kembali tertutup. Gasing datang menenteng tas tenisnya…',
     11: 'Eh… bola tenis di tas Gasing jatuh dan menggelinding!',
@@ -71,10 +74,19 @@ export const CONFIG = {
   assets: {
     gasing: 'assets/characters/gasing.png',
 
-    s1_bg: 'assets/scene1/bg-stasiun.jpg',
+    // Scene 1 berlapis (hasil bedah): langit → awan bergerak pelan → stasiun (PNG/WebP, langit transparan)
+    s1_sky: 'assets/scene1/Sky.png',
+    s1_clouds: ['assets/scene1/cloud-1.png', 'assets/scene1/cloud-2.png', 'assets/scene1/cloud-3.png'],
+    s1_fg: 'assets/scene1/bg-stasiun4.png',
+    s1_logo: 'assets/scene1/logo-gasing-railways.webp', // logo di kepala tiket (latar putih → di-multiply ke kertas)
 
-    s2_view: 'assets/scene2/view-landmark-surabaya.jpg',
-    s2_window: 'assets/scene2/jendela-kereta.png',
+    s2_parallax: 'assets/scene2/parallax/', // folder sprite parallax Surabaya (hasil bedah dari Figma)
+    s2_room: 'assets/scene2/train-inside.png', // interior kereta, jendela transparan (1671×941); tali pegangan sudah dilepas (lihat s2_straps)
+    s2_straps: [1, 2, 3, 4].map((n) => `assets/scene2/train-strap-${n}.png`), // 4 pegangan tangan (tali+segitiga) terpisah, diayun lewat CSS
+
+    s2_bottle: 'assets/scene2/bottle.webp', // botol minum di meja bawah jendela kereta
+    s2_poster_math: 'assets/scene2/poster-math.webp',     // poster "Kelas Matematika Dasar" (1024×1536) → bingkai kiri
+    s2_poster_wilson: 'assets/scene2/poster-wilson.webp', // poster Wilson (1024×1536) → bingkai kanan
 
     s3_bg: 'assets/scene3/bg-jalan-surabaya.jpg',
     s3_gerobak: 'assets/scene3/gerobak-soto-ambengan.png',
@@ -86,6 +98,7 @@ export const CONFIG = {
     s4_koper: 'assets/scene4/koper.png',
 
     s5_bg3d: 'assets/scene5/bg-3d.jpg', // background scene 3D (opsional)
+    train_logo: 'assets/train/virgin-logo.png', // logo di sisi lokomotif (PNG transparan; diubah jadi putih di kode)
 
     s11_bg: 'assets/scene11/bg-toko-antik.jpg',
 

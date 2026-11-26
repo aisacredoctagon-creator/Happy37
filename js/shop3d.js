@@ -695,6 +695,102 @@ function buildFloorLamp(lights) {
   return g;
 }
 
+/* ---------- Perabot sisi kiri ruangan ---------- */
+function globeTexture() {
+  const r = rng(31);
+  return canvasTex(512, 256, (g, w, h) => {
+    g.fillStyle = '#b9a578'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#6f8a5a';
+    for (let i = 0; i < 34; i++) {
+      g.beginPath();
+      g.ellipse(r() * w, h * (0.15 + r() * 0.7), 14 + r() * 46, 8 + r() * 26, r() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.strokeStyle = 'rgba(70,45,20,0.45)'; g.lineWidth = 1.5;
+    for (let x = 0; x <= w; x += w / 12) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+    for (let y = 0; y <= h; y += h / 6) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+  });
+}
+
+function buildGlobe(anim) {
+  const g = new THREE.Group();
+  put(g, mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.05, 20), M.walnutDark), 0, 0.025, 0);
+  put(g, mesh(new THREE.CylinderGeometry(0.022, 0.034, 0.78, 10), M.walnut), 0, 0.42, 0);
+  put(g, mesh(new THREE.CylinderGeometry(0.07, 0.04, 0.05, 14), M.brass), 0, 0.82, 0);
+  const tilt = new THREE.Group();
+  put(g, tilt, 0, 1.12, 0);
+  tilt.rotation.z = 0.41;
+  const ball = put(tilt, mesh(new THREE.SphereGeometry(0.27, 28, 20), new THREE.MeshStandardMaterial({ map: globeTexture(), roughness: 0.5, envMapIntensity: 0.5 })), 0, 0, 0);
+  put(tilt, mesh(new THREE.TorusGeometry(0.31, 0.012, 8, 40), M.brass), 0, 0, 0).rotation.y = Math.PI / 2;
+  put(tilt, mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.7, 8), M.brass), 0, 0, 0);
+  anim.push((t, dt) => { ball.rotation.y += dt * 0.25; });
+  return g;
+}
+
+function buildDresser(w, h, d, seed, faceTex) {
+  const g = new THREE.Group();
+  put(g, box(w - 0.1, 0.1, d - 0.08, M.walnutDark), 0, 0.05, 0);                    // plinth
+  put(g, box(w, h - 0.15, d, M.mahogany), 0, 0.1 + (h - 0.15) / 2, 0);
+  put(g, box(w + 0.06, 0.05, d + 0.05, M.walnut), 0, h - 0.025, 0.01);              // papan atas
+  const dh = (h - 0.3) / 2;
+  for (let row = 0; row < 2; row++) for (let c = 0; c < 3; c++) {
+    const x = (c - 1) * (w / 3), y = 0.16 + dh * (row + 0.5);
+    put(g, box(w / 3 - 0.07, dh - 0.05, 0.02, M.oak), x, y, d / 2 + 0.005);
+    put(g, mesh(new THREE.SphereGeometry(0.026, 10, 8), M.brass), x, y, d / 2 + 0.03);
+  }
+  for (const sx of [-1, 1]) put(g, mesh(new THREE.CylinderGeometry(0.03, 0.02, 0.1, 8), M.walnutDark), sx * (w / 2 - 0.08), 0.0, d / 2 - 0.08);
+  fillRow(put(g, new THREE.Group(), 0, h, 0), 0, -w / 2 + 0.04, w / 2 - 0.04, rng(seed), faceTex);
+  return g;
+}
+
+function buildWardrobe(w, h, d) {
+  const g = new THREE.Group();
+  put(g, box(w, 0.14, d, M.walnutDark), 0, 0.07, 0);
+  put(g, box(w - 0.04, h - 0.4, d - 0.04, M.mahogany), 0, 0.14 + (h - 0.4) / 2, 0);
+  put(g, box(w + 0.12, 0.14, d + 0.1, M.walnut), 0, h - 0.07, 0.02);               // lis atas
+  put(g, box(w * 0.55, 0.12, 0.06, M.mahogany), 0, h + 0.05, d / 2 - 0.05);         // mahkota
+  for (const sx of [-1, 1]) {
+    put(g, box(w / 2 - 0.1, h - 0.7, 0.025, M.oak), sx * (w / 4), 0.14 + (h - 0.4) / 2, d / 2);
+    put(g, box(w / 2 - 0.26, h - 0.95, 0.02, M.walnut), sx * (w / 4), 0.14 + (h - 0.4) / 2, d / 2 + 0.02);
+    put(g, mesh(new THREE.SphereGeometry(0.03, 10, 8), M.brass), sx * 0.09, 1.25, d / 2 + 0.04);
+  }
+  return g;
+}
+
+function buildHatboxes() {
+  const g = new THREE.Group();
+  let y = 0;
+  [[0.26, 0.22, 0xe7dcc0, 0x8a1325, 0.0], [0.21, 0.19, 0x2f5d4a, 0xc9a54a, 0.03], [0.16, 0.16, 0xa8452e, 0xe7dcc0, -0.02]].forEach(([R, H, c1, c2, dx]) => {
+    put(g, mesh(new THREE.CylinderGeometry(R, R, H, 24), cmat(c1, { roughness: 0.7 })), dx, y + H / 2, 0);
+    put(g, mesh(new THREE.CylinderGeometry(R + 0.012, R + 0.012, 0.05, 24), cmat(c2, { roughness: 0.6 })), dx, y + H, 0);
+    y += H + 0.05;
+  });
+  return g;
+}
+
+function buildSideTable(faceTex, seed) {
+  const g = new THREE.Group();
+  put(g, mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.04, 28), M.walnut), 0, 0.74, 0);
+  put(g, mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.72, 12), M.walnutDark), 0, 0.38, 0);
+  put(g, mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.04, 20), M.walnutDark), 0, 0.02, 0);
+  put(g, mesh(new THREE.TorusGeometry(0.4, 0.012, 6, 28), M.brass), 0, 0.745, 0).rotation.x = Math.PI / 2;
+  fillRow(put(g, new THREE.Group(), 0, 0.76, 0), 0, -0.34, 0.34, rng(seed), faceTex);
+  return g;
+}
+
+function buildUmbrellaStand() {
+  const g = new THREE.Group();
+  put(g, mesh(new THREE.CylinderGeometry(0.15, 0.12, 0.55, 18, 1, true), std(0x2f4a6a, { roughness: 0.4, side: THREE.DoubleSide })), 0, 0.275, 0);
+  put(g, mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.03, 18), M.dark), 0, 0.015, 0);
+  put(g, mesh(new THREE.TorusGeometry(0.15, 0.012, 6, 20), M.brass), 0, 0.5, 0).rotation.x = Math.PI / 2;
+  [[-0.04, 0.02, 0.18, 0x1a1512], [0.05, -0.02, -0.25, 0x6a3520], [0.0, 0.05, 0.05, 0x242424]].forEach(([x, z, tz, c], i) => {
+    const cane = put(g, mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.05 + i * 0.08, 8), cmat(c, { roughness: 0.5 })), x, 0.78, z);
+    cane.rotation.z = tz * 0.5;
+    put(g, mesh(new THREE.SphereGeometry(0.025, 8, 6), M.brass), x - Math.sin(tz * 0.5) * (0.52 + i * 0.04), 0.78 + 0.52 + i * 0.04, z);
+  });
+  return g;
+}
+
 function buildFrame(w, h, tex, frameMat = M.gilt) {
   const g = new THREE.Group();
   const b = 0.07;
@@ -792,7 +888,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     scene.add(sign);
 
     const frames = [
-      [0.9, 1.15, 2, -0.2, 2.75], [1.25, 0.9, 5, 1.2, 2.95], [0.75, 0.95, 8, 2.55, 2.7], [0.6, 0.6, 14, 3.4, 3.1],
+      [0.9, 1.15, 2, -0.5, 2.3], [1.25, 0.9, 5, 0.9, 2.5], [0.75, 0.95, 8, 2.225, 2.25], [0.6, 0.6, 14, 3.225, 2.65],
     ];
     for (const [w, h, seed, x, y] of frames) {
       const f = buildFrame(w, h, paintingTexture(seed));
@@ -821,6 +917,44 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     const fl = buildFloorLamp(lights);
     fl.position.set(-2.9, 0, -3.1);
     scene.add(fl);
+
+    // sisi kiri ruangan: lemari, laci berisi pajangan, globe, kotak topi, tempat payung, lukisan dinding
+    const wardrobe = buildWardrobe(1.3, 2.7, 0.62);
+    wardrobe.position.set(-6.2, 0, ROOM.back + 0.33);
+    scene.add(wardrobe);
+
+    const dresser = buildDresser(1.8, 1.0, 0.55, 41, faceTex);
+    dresser.position.set(-6.62, 0, -2.6); dresser.rotation.y = Math.PI / 2;
+    scene.add(dresser);
+    for (const [w, h, seed, z, y] of [[0.9, 1.1, 21, -2.95, 2.25], [0.6, 0.8, 33, -1.95, 2.1]]) {
+      const f = buildFrame(w, h, paintingTexture(seed));
+      f.position.set(-ROOM.x + 0.1, y, z); f.rotation.y = Math.PI / 2;
+      scene.add(f);
+    }
+
+    // barang di lantai kiri (area yang terlihat kamera, di luar jalur jalan Gasing)
+    const globe = buildGlobe(anim);
+    globe.position.set(-4.05, 0, -3.6);
+    scene.add(globe);
+
+    const lowTrunk = buildTrunk(1.0, 0.5, 0.6);
+    lowTrunk.position.set(-3.7, 0, -0.9); lowTrunk.rotation.y = 0.3;
+    scene.add(lowTrunk);
+    const topTrunk = buildTrunk(0.72, 0.36, 0.46, M.leather);
+    topTrunk.position.set(-3.65, 0.5, -0.92); topTrunk.rotation.y = -0.15;
+    scene.add(topTrunk);
+
+    const hats = buildHatboxes();
+    hats.position.set(-3.0, 0, -2.0); hats.rotation.y = 0.4;
+    scene.add(hats);
+
+    const umb = buildUmbrellaStand();
+    umb.position.set(-4.7, 0, -3.9);
+    scene.add(umb);
+
+    const table = buildSideTable(faceTex, 52);
+    table.position.set(-3.4, 0, 0.9);
+    scene.add(table);
   }
 
   /* ---------------- Lampu gantung ---------------- */
@@ -974,8 +1108,9 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
   scene.add(caseLight);
   function setCaseLighting(k) {
     spot.angle = 0.42 + k * 0.4;
-    spot.intensity = 220 - k * 130;
-    caseLight.intensity = k * 12;
+    // Saat koper terbuka cahaya diredupkan (spot 220 → 50, lampu isi 12 → 6) supaya warna merah kereta tidak pucat / silau
+    spot.intensity = 220 - k * 170;
+    caseLight.intensity = k * 6;
     if (beamMat) beamMat.uniforms.strength.value = 0.2 * (1 - k);
   }
 

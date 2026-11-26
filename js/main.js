@@ -14,8 +14,8 @@ const TOTAL = 12;
 
 const $ = (id) => document.getElementById(id);
 const el = {
-  gl: $('gl'), stage: $('stage2d'), progress: $('progress'), label: $('sceneLabel'),
-  caption: $('caption'), action: $('actionBtn'), hint: $('hint'), counter: $('counter'),
+  gl: $('gl'), stage: $('stage2d'),
+  action: $('actionBtn'), hint: $('hint'), counter: $('counter'),
   note: $('note'), noteTitle: $('noteTitle'), noteBody: $('noteBody'), noteClose: $('noteClose'),
   flash: $('flash'), fader: $('fader'), confetti: $('confetti'),
   endBar: $('endBar'), endZoom: $('endZoom'), endRestart: $('endRestart'),
@@ -24,7 +24,6 @@ const el = {
 };
 
 /* ---------------- HUD ---------------- */
-for (let i = 1; i <= TOTAL; i++) el.progress.append(h('span', { class: 'dot', 'data-n': i }));
 el.startTitle.textContent = CONFIG.recipient;
 const startGasing = createGasing3D({ className: 'start-gasing', label: 'Karakter Gasing' });
 $('startGasing').replaceWith(startGasing);
@@ -39,28 +38,30 @@ let debugPanel = null;
 function setStage(n) {
   stage = n;
   debugPanel?.update(n);
-  el.progress.querySelectorAll('.dot').forEach((d) => {
-    const k = +d.dataset.n;
-    d.classList.toggle('is-done', k < n);
-    d.classList.toggle('is-current', k === n);
-  });
-  el.label.textContent = `Scene ${n} · ${TITLES[n]}`;
-  caption(CONFIG.captions[n] ?? '');
 }
 
-function caption(text) {
-  if (el.caption.textContent === text) return;
-  gsap.killTweensOf(el.caption);
-  gsap.fromTo(el.caption, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.35 });
-  el.caption.textContent = text;
-}
+// Subtitle/caption dihapus — dibiarkan no-op supaya pemanggil di scene tidak error.
+function caption() {}
 
 let actionHandler = null;
-function showAction(label, fn) {
+function showAction(label, fn, opts = {}) {
   actionHandler = fn;
-  el.action.textContent = label;
+  el.action.classList.toggle('is-corner', !!opts.corner); // opts.corner: pojok kanan bawah, tengah layar dikosongkan
+  if (opts.corner) {
+    // tombol pojok (mis. "Turun"): label + panah kanan yang beranimasi
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    arrow.setAttribute('class', 'btn-arrow');
+    arrow.setAttribute('viewBox', '0 0 24 24');
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.innerHTML = '<path d="M4 12h15M12.5 5.5 19 12l-6.5 6.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
+    const text = document.createElement('span');
+    text.textContent = label;
+    el.action.replaceChildren(text, arrow);
+  } else {
+    el.action.textContent = label;
+  }
   el.action.hidden = false;
-  gsap.fromTo(el.action, { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(2)' });
+  gsap.fromTo(el.action, { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(2)', clearProps: 'all' }); // clearProps: sisa style inline GSAP tidak menimpa hover CSS
 }
 function hideAction() { el.action.hidden = true; actionHandler = null; }
 el.action.addEventListener('click', () => { const fn = actionHandler; hideAction(); fn?.(); });
@@ -86,7 +87,9 @@ function fade(to, color = 'black', duration = 0.45) {
 }
 
 let cancelNote = null;
-function openNote(part) {
+// engraved: tulisan sudah terukir di model 3D (ultra zoom-in) → kertas catatan HTML disembunyikan, hanya tombol ✕ yang tampil
+function openNote(part, { engraved = false } = {}) {
+  el.note.classList.toggle('is-engraved', engraved);
   el.noteTitle.textContent = part.name;
   el.noteBody.replaceChildren(...part.text.map((s) => h('p', {}, s)));
   el.note.hidden = false;
@@ -191,7 +194,7 @@ function mount2D(n) {
   const ctx = {
     next: (opts) => live() && goTo(n === 4 ? 5 : n + 1, opts),
     caption: (t) => live() && caption(t),
-    showAction: (l, fn) => live() && showAction(l, fn),
+    showAction: (l, fn, opts) => live() && showAction(l, fn, opts),
     setStage: (k) => live() && setStage(k),
     confetti,
     restart: () => goTo(1),
