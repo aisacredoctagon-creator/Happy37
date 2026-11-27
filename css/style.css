@@ -313,15 +313,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .shop-gasing { position: absolute; left: 0; top: 0; transform-origin: 50% 100%; will-change: transform, opacity; }
 
 /* Gelembung ucapan Gasing di jalan 3D (js/street3d.js, scene 3): posisinya dihitung tiap frame dari kepala Gasing */
-.street-bubble {
-  position: absolute; left: 0; top: 0;
-  background: #fff; color: var(--ink);
-  font-weight: 800; font-size: clamp(13px, 1.4vw, 17px);
-  padding: 10px 14px; border-radius: 16px; white-space: nowrap;
-  box-shadow: 0 10px 20px rgba(0, 0, 0, .25);
-  opacity: 0; transform-origin: 0 100%; will-change: transform, opacity;
+.street-bubble { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; transform-origin: 0 0; will-change: transform, opacity; }
+.street-bubble svg { position: absolute; left: 0; top: 0; overflow: visible; }
+/* awan & bulatan: isi krem hangat + outline cokelat tua tebal (senada art style); bentuk dibangun di js/street3d.js */
+.street-bubble .sb-cloud, .street-bubble .sb-dot { fill: var(--paper); stroke: var(--ink); stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; transform-box: fill-box; }
+.street-bubble .sb-cloud { transform-origin: 14% 100%; filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .18)); }
+.street-bubble .sb-dot { transform-origin: center; }
+.street-bubble-text {
+  position: absolute; width: max-content; text-align: center; white-space: normal; line-height: 1.2;
+  font-family: var(--font-display); font-weight: 600; font-size: clamp(14px, 1.5vw, 18px); color: var(--ink);
 }
-.street-bubble::after { content: ''; position: absolute; left: 14px; bottom: -8px; border: 8px solid transparent; border-top-color: #fff; border-bottom: 0; }
 
 /* Hotspot (yang bisa diketuk) */
 .hotspot { position: relative; }
@@ -782,3 +783,44 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .dbg-thumb-row input { width: 100%; accent-color: var(--mustard); }
 .dbg-thumb-val { text-align: right; font-variant-numeric: tabular-nums; }
 .dbg-thumb-out { display: block; font-size: 10px; white-space: normal; word-break: break-all; user-select: all; opacity: .85; }
+/* panel debug: alat uji audio (AUDIO_TOOLS di js/debug.js) */
+.dbg-audio-note { display: block; font-size: 10px; opacity: .8; }
+
+/* Pemain video TV (scene 12) — js/tv-player.js */
+.tvp { position: fixed; inset: 0; z-index: 70; pointer-events: none; opacity: 1; transition: opacity .35s ease; }
+.tvp[hidden] { display: none; }
+.tvp.is-leaving { opacity: 0; }
+.tvp-hit { position: absolute; inset: 0; pointer-events: auto; cursor: pointer; }
+.tvp.is-idle .tvp-hit { cursor: none; }
+.tvp-bar, .tvp-close { transition: opacity .3s ease, transform .3s ease; }
+.tvp.is-idle .tvp-bar { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px); }
+.tvp.is-idle .tvp-close { opacity: 0; pointer-events: none; }
+.tvp-bar {
+  position: absolute; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%);
+  width: min(94vw, 640px); display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  background: rgba(27, 19, 14, .72); border: 1px solid rgba(246, 239, 226, .18); border-radius: 999px;
+  backdrop-filter: blur(6px); pointer-events: auto; color: var(--cream);
+}
+.tvp-btn { width: 36px; height: 36px; flex: none; border: 0; border-radius: 50%; background: rgba(246, 239, 226, .12); color: var(--cream); font-size: 15px; line-height: 1; display: grid; place-items: center; }
+.tvp-btn:hover { background: rgba(246, 239, 226, .24); }
+.tvp-close { position: absolute; top: calc(12px + var(--safe-t)); right: 12px; pointer-events: auto; width: 42px; height: 42px; background: rgba(27, 19, 14, .72); font-size: 18px; }
+.tvp-time { flex: none; font: 600 12px/1 var(--font-body); font-variant-numeric: tabular-nums; opacity: .85; min-width: 74px; text-align: center; }
+.tvp input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; height: 22px; margin: 0; cursor: pointer; }
+.tvp input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: rgba(246, 239, 226, .25); }
+.tvp input[type=range]::-moz-range-track { height: 4px; border-radius: 4px; background: rgba(246, 239, 226, .25); }
+.tvp input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--mustard); border: 0; }
+.tvp input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--mustard); border: 0; }
+.tvp-prog { flex: 1 1 auto; min-width: 0; }
+.tvp-prog::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--tomato) var(--p, 0%), rgba(246, 239, 226, .25) var(--p, 0%)); }
+.tvp-vol { width: 70px; flex: none; }
+.tvp-big {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: auto;
+  width: 88px; height: 88px; border: 0; border-radius: 50%; background: var(--tomato); color: #fff; font-size: 34px; padding-left: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.tvp-big[hidden] { display: none; }
+@media (max-width: 600px) { .tvp-vol { display: none; } .tvp-time { min-width: 0; font-size: 11px; } .tvp-bar { gap: 8px; padding: 6px 10px; } }
+.tvp-big { flex-direction: column; }
+.tvp-big-hint { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 10px; white-space: nowrap; font: 700 14px/1 var(--font-body); color: #fff; text-shadow: 0 2px 6px rgba(0, 0, 0, .7); padding-left: 0; }
+.tvp-big { flex-direction: column; }
+.tvp-big-hint { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 10px; white-space: nowrap; font: 700 14px/1 var(--font-body); color: #fff; text-shadow: 0 2px 6px rgba(0, 0, 0, .7); padding-left: 0; }

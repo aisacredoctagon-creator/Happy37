@@ -2,12 +2,25 @@ import { gsap } from 'gsap';
 import { CONFIG } from './config.js';
 import { slot, h, mediaExists } from './assets.js';
 import { createGasing3D, bagMouthOffset, GESTURE_TIMING } from './gasing3d.js';
+import { sfx, startLoop, stopLoopId, bindDuckToMedia } from './audio.js';
 
 const A = CONFIG.assets;
 
 // Gasing: karakter 3D (js/gasing3d.js). yaw > 0 = badan menghadap sedikit ke kanan layar.
 // bag = true → Gasing menjinjing tas tenis + raket (model 3D js/bag3d.js) di sarung tangan kirinya.
 // Kalau WebGL gagal → gasing.png + slot gambar assets/scene3/tas-raket-tenis.png
+/** onUpdate GSAP (tween ease bounce.out): bunyi pantulan tepat di titik sentuh lantai ease itu (progres 1/2.75, 2/2.75, 2.5/2.75, 1) — tidak bergantung FPS. */
+function bounceSfx() {
+  const hits = [1 / 2.75, 2 / 2.75, 2.5 / 2.75, 0.999], vols = [1, 0.6, 0.35, 0.18];
+  let prev = 0;
+  return function () {
+    const p = this.progress();
+    let hit = -1;
+    hits.forEach((h, k) => { if (prev < h && p >= h) hit = k; });
+    if (hit >= 0) sfx('ball_bounce', { volume: vols[hit] });
+    prev = p;
+  };
+}
 const gasing = (label, className = '', yaw = 0, bag = false, bagSide = 0) => createGasing3D({ label, className, yaw, bag, bagSide });
 const S12_BAG_SIDE = 1.1;   // rad: scene 1 & 2 — tas raket digeser ke samping badan (+ = kiri layar) supaya terlihat, tidak sepenuhnya tertutup badan
 
@@ -83,10 +96,12 @@ function scene1(ctx) {
   ticket.addEventListener('click', () => {
     if (done) return;
     done = true;
+    sfx('paper');
     g.hop();
     el.querySelector('.s1-ticket-wrap').classList.remove('attn');
     gsap.timeline()
       .fromTo(stamp, { scale: 2.4, opacity: 0, rotate: -25 }, { scale: 1, opacity: 1, rotate: -12, duration: 0.35, ease: 'back.out(2)' })
+      .add(() => sfx('stamp'), '-=0.12')                       // stempel mendarat
       .to(ticket, { y: '-=12', duration: 0.15, yoyo: true, repeat: 1 }, '<0.1')
       .to(ticket, { scale: 1.08, duration: 0.5, ease: 'power2.inOut' }, '+=0.5')
       .add(() => ctx.next(), '+=0.2');
@@ -126,7 +141,6 @@ const S2_NAT = { // ukuran asli tiap sprite (px)
 };
 const u = (n) => `calc(var(--u) * ${+n.toFixed(2)})`;
 
-  const g2 = gasing('Gasing lihat jendela', 's2-gasing', 0.3, true, S12_BAG_SIDE);   // tas raket di punggung (sama seperti scene lain)
 // sprite: x = tepi kiri, y = tepi BAWAH (unit desain), s = skala terhadap ukuran asli
 // keepText: sprite berisi tulisan/angka → di chunk cermin dibalik lagi supaya tulisan tetap terbaca
 function s2Sprite(name, x, y, s = 1, extra = '', keepText = false) {
@@ -247,6 +261,8 @@ function buildSurabayaParallax() {
 }
 
 function scene2(ctx) {
+  // dibuat per pemanggilan scene2() (bukan di level modul): instance Gasing yang sudah di-dispose tidak dipakai ulang saat scene diulang / dilewati
+  const g2 = gasing('Gasing lihat jendela', 's2-gasing', 0.3, true, S12_BAG_SIDE);   // tas raket di punggung (sama seperti scene lain)
   const el = h('section', { class: 'scene s2' },
     h('div', { class: 's2-wall' }),
     // Interior kereta (PNG dengan jendela transparan): parallax Surabaya ada DI BELAKANG gambar ini
@@ -303,6 +319,7 @@ function scene3(ctx) {
   gerobak.addEventListener('click', () => {
     if (eaten) return;
     eaten = true;
+    sfx('ui_click');
     gerobak.classList.remove('hotspot');
     gsap.timeline()
       .to(gerobak, { scale: 1.06, duration: 0.12, yoyo: true, repeat: 1 })
@@ -317,6 +334,7 @@ function scene3(ctx) {
   });
   toko.addEventListener('click', () => {
     toko.disabled = true;
+    sfx('shop_bell');
     toko.classList.remove('hotspot');
     gsap.to(gasingGroup, { x: () => toko.getBoundingClientRect().left - gasingGroup.getBoundingClientRect().left, opacity: 0, duration: 1.1, ease: 'power1.in', onComplete: () => ctx.next() });
   });
@@ -347,6 +365,7 @@ function scene4(ctx) {
 
   koper.addEventListener('click', () => {
     koper.disabled = true;
+    sfx('ui_click');
     koper.classList.remove('hotspot');
     const kr = koper.getBoundingClientRect();
     const er = el.getBoundingClientRect();
@@ -390,8 +409,8 @@ function scene11(ctx) {
   const gasingGroup = h('div', { class: 's11-gasing-group' }, g11);
 
   const endBar = h('div', { class: 'end-bar' },
-    h('button', { class: 'btn btn-ghost', onclick: () => tv.classList.toggle('is-expanded') }, '⤢ Perbesar TV'),
-    h('button', { class: 'btn', onclick: () => ctx.restart() }, '↺ Ulangi dari awal'));
+    h('button', { class: 'btn btn-ghost', onclick: () => { sfx('ui_click'); tv.classList.toggle('is-expanded'); } }, '⤢ Perbesar TV'),
+    h('button', { class: 'btn', onclick: () => { sfx('ui_click'); ctx.restart(); } }, '↺ Ulangi dari awal'));
 
   const el = h('section', { class: 'scene s11' },
     bg(A.s11_bg, 'Background · Toko antik (sisi TV)', '#a8896b'),
@@ -400,6 +419,7 @@ function scene11(ctx) {
 
   let noiseRAF = 0;
   function startNoise() {
+    startLoop('tvstatic');            // desis statis selama layar bersalju
     const c = screen.querySelector('.crt-noise');
     const g = c.getContext('2d');
     const img = g.createImageData(c.width, c.height);
@@ -414,15 +434,17 @@ function scene11(ctx) {
     };
     tick();
   }
-  const stopNoise = () => cancelAnimationFrame(noiseRAF);
+  const stopNoise = () => { cancelAnimationFrame(noiseRAF); stopLoopId('tvstatic'); };
 
   async function turnOnTV() {
     tv.classList.add('is-on');
+    sfx('tv_on');
     startNoise();
     await new Promise((r) => setTimeout(r, 900));
     const content = screen.querySelector('.crt-content');
     if (await mediaExists(A.s12_video)) {
       const v = h('video', { src: A.s12_video, playsinline: '', controls: '' });
+      bindDuckToMedia(v);                    // musik & ambience hampir hening selama video diputar
       content.append(v);
       v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
     } else {
@@ -458,7 +480,8 @@ function scene11(ctx) {
       const tl = gsap.timeline({ delay: ctx.at12 ? 0 : 1.2 })
         .add(() => { g11.wobble(); g11.gesture('startle'); })   // senggol tas (kaget), lalu Gasing meloncat
         .add(() => g11.hop(), '+=0.4')
-        .to(ball, { y: floorY, duration: 0.7, ease: 'bounce.out' })
+        .add(() => sfx('ball_pop'))
+        .to(ball, { y: floorY, duration: 0.7, ease: 'bounce.out', onUpdate: bounceSfx() })
         .to(ball, { x: startX + dist, rotate: (dist / (Math.PI * size)) * 360, duration: Math.max(1.6, dist / 260), ease: 'power2.out' }, '-=0.15')
         .add(() => { ctx.setStage(12); ctx.caption(CONFIG.captions[12]); }, '-=0.6')
         .addLabel('stage12')

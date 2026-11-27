@@ -15,6 +15,8 @@ import { gsap } from 'gsap';
 import { createGasing3D, bagMouthOffset, GESTURE_TIMING } from './gasing3d.js';
 import { mediaExists } from './assets.js';
 import { CONFIG } from './config.js';
+import { sfx, startLoop, stopLoopId } from './audio.js';
+import { createTVPlayer } from './tv-player.js';
 
 const DEG = Math.PI / 180;
 const ROOM = { x: 7, back: -5, front: 16, h: 4.4 };
@@ -39,12 +41,18 @@ const TV_SCREEN_W = TV_POS.clone().add(new THREE.Vector3(TV_SCREEN.x, TV_SCREEN.
 // Scene 11: bola jatuh saat Gasing masih berjalan menuju TV, ketika progres jalan (0..1) mencapai nilai ini
 const BALL_DROP_AT = 0.55;
 const MARVEL_SPEED = 1.6;                         // scene 12: kecepatan gestur 'marvel' (1 = tempo normal; > 1 = lebih cepat, tetap terbaca jelas)
-const BALL_ROLL_T = 4.4;                          // detik bola menggelinding dari tas ke depan TV
+const BALL_ROLL_T = 4.4;
+const BOUNCE_HITS = [1 / 2.75, 2 / 2.75, 2.5 / 2.75, 0.999];   // progres ease bounce.out saat bola menyentuh lantai
+const BOUNCE_VOL = [1, 0.6, 0.35, 0.18];                        // volume SFX pantulan berurutan (relatif manifest)                          // detik bola menggelinding dari tas ke depan TV
 const TV_PATH = { from: new THREE.Vector3(-5.0, 0, 3.3), to: new THREE.Vector3(-0.35, 0, 2.3) };   // jalur Gasing
 const ACTOR_ASPECT = 1000 / 1193;                                // lebar/tinggi kotak elemen Gasing
 const BALL_R = 0.11;
 const BALL_END = TV_POS.clone().addScaledVector(TV_FACE, 1.3).add(new THREE.Vector3(0.05, 0, 0.05));
 const BALL_PX = 40;                                              // diameter dasar elemen bola (px)
+
+// Efek vintage di atas video (hanya saat video diputar). Nilai awal lalu diturunkan ±70%: video tetap jelas ditonton.
+const TV_FILL = 0.88;   // fraksi jarak kamera "pas" untuk video 16:9 (<1 = zoom lebih dekat; 0,88 → ±6% tepi kiri/kanan video keluar layar, bingkai TV tidak terlihat)
+const TV_FX = { grain: 0.05, grainEvery: 4, overlay: 0.28 };   // overlay = opacity garis scan/vinyet 3D bawaan layar (aslinya 1)
 
 const VIEWS = {
   //        target                         arah kamera        lebar/tinggi yang harus muat (landscape / portrait)
@@ -54,7 +62,8 @@ const VIEWS = {
   tvWide: { t: [1.8, 1.0, 1.6], dir: [0.05, 0.1, 1], w: 9.2, h: 3.8, pw: 6.5, po: 0 },   // po = offset vertikal khusus portrait
   // scene 12: TV menyala, kamera mendekat; tvClose = layar hampir memenuhi bingkai
   tvMid: { t: TV_SCREEN_W.toArray(), dir: [TV_FACE.x, 0.1, TV_FACE.z], w: 2.9, h: 2.2, pw: 2.0 },
-  tvClose: { t: TV_SCREEN_W.toArray(), dir: [TV_FACE.x, 0.02, TV_FACE.z], w: 1.2, h: 0.8, pw: 0.9 },
+  // tvClose: kamera lurus ke layar; area video 16:9 (bukan bingkai) memenuhi seluruh viewport (lihat computeView, flag fill)
+  tvClose: { t: TV_SCREEN_W.toArray(), dir: [TV_FACE.x, 0, TV_FACE.z], w: TV_SCREEN.w, h: TV_SCREEN.w * 9 / 16, pw: TV_SCREEN.w, fill: true },
 };
 
 /* ============================================================
@@ -524,9 +533,49 @@ function buildTV() {
   const onMesh = new THREE.Mesh(geo, onMat);
   onMesh.name = 'tvScreen';
   screenGroup.add(onMesh);
-  const overlay = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: crtOverlayTexture(), transparent: true, depthWrite: false, toneMapped: false }));
+  const overlayMat = new THREE.MeshBasicMaterial({ map: crtOverlayTexture(), transparent: true, depthWrite: false, toneMapped: false });
+  // letterbox: bagian layar di luar [0,1] pada UV tekstur video dihitamkan (video 'contain', tidak gepeng / terpotong)
+  // Area kosong (bar letterbox) diisi video yang SAMA (tekstur yang sama → sinkron, tanpa video kedua): dibesarkan 'cover', di-blur (16 tap) & digelapkan.
+  // Dihitung di shader layar, jadi otomatis mengikuti bentuk lengkung layar dan tidak bocor ke bingkai. uBgOn = 0 → hitam (statis / placeholder).
+  onMat.userData.u = {
+    uBgOn: { value: 0 }, uTexRep: { value: new THREE.Vector2(1, 1) }, uTexOff: { value: new THREE.Vector2(0, 0) },
+    uCover: { value: new THREE.Vector2(1, 1) },      // skala UV 'cover' pada tekstur video
+    uBlur: { value: 0.03 }, uDark: { value: 0.6 },   // radius blur (UV tekstur; ≈ ±20 px di layar) & kegelapan
+  };
+  onMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, onMat.userData.u);
+    sh.fragmentShader = 'uniform float uBgOn, uBlur, uDark; uniform vec2 uTexRep, uTexOff, uCover;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      #ifdef USE_MAP
+        if (vMapUv.x < 0.0 || vMapUv.x > 1.0 || vMapUv.y < 0.0 || vMapUv.y > 1.0) {
+          if (uBgOn > 0.5) {
+            vec2 pUv = (vMapUv - uTexOff) / uTexRep;                 // UV bidang layar (0..1)
+            vec2 cUv = vec2(0.5) + (pUv - vec2(0.5)) * uCover;        // 'cover'
+            vec3 acc = vec3(0.0);
+            for (int i = 0; i < 16; i++) {
+              float fi = float(i), rr = sqrt((fi + 0.5) / 16.0) * uBlur, an = fi * 2.39996;
+              acc += texture2D(map, clamp(cUv + vec2(cos(an) * 0.5625, sin(an)) * rr, 0.0, 1.0)).rgb;
+            }
+            vec3 bg = acc / 16.0 * uDark;
+            #ifdef DECODE_VIDEO_TEXTURE
+              bg = mix(pow(bg * 0.9478672986 + vec3(0.0521327014), vec3(2.4)), bg * 0.0773993808, vec3(lessThanEqual(bg, vec3(0.04045))));
+            #endif
+            diffuseColor.rgb = bg;
+          } else diffuseColor.rgb = vec3(0.0);
+        }
+      #endif`);
+  };
+  // grain halus: tekstur derau 256² (dibuat sekali), hanya digeser offset-nya → tanpa unggahan per frame
+  const grainData = new Uint8Array(256 * 256 * 4);
+  for (let i = 0; i < grainData.length; i += 4) { const v = 70 + ((Math.random() * 120) | 0); grainData[i] = grainData[i + 1] = grainData[i + 2] = v; grainData[i + 3] = 255; }
+  const grainTex = new THREE.DataTexture(grainData, 256, 256, THREE.RGBAFormat);
+  grainTex.wrapS = grainTex.wrapT = THREE.RepeatWrapping; grainTex.repeat.set(2.6, 2); grainTex.needsUpdate = true;
+  const grainMat = new THREE.MeshBasicMaterial({ map: grainTex, transparent: true, opacity: 0, depthWrite: false, toneMapped: false });
+  const overlay = new THREE.Mesh(geo, overlayMat);
   overlay.position.z = 0.002;
   screenGroup.add(overlay);
+  const grainMesh = new THREE.Mesh(geo, grainMat);
+  grainMesh.position.z = 0.003;
+  screenGroup.add(grainMesh);
 
   // kilau kaca (selalu ada)
   const sheen = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.07, depthWrite: false }));
@@ -538,7 +587,7 @@ function buildTV() {
   g.add(glow);
 
   g.traverse((o) => { if (o.isMesh) o.userData.tv = true; });
-  return { group: g, screenGroup, onMat, onMesh, offGlass, noiseData, noiseTex, led, glow, knobs };
+  return { group: g, screenGroup, onMat, overlayMat, grainMat, grainTex, onMesh, offGlass, noiseData, noiseTex, led, glow, knobs };
 }
 
 function buildBookcase({ W, H, levels, seed, faceTex, crtLevel = -1 }) {
@@ -984,12 +1033,21 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
   scene.add(ballShadow);
 
   // statis TV: diisi acak tiap frame selama noiseOn
-  const tvCtl = { noiseOn: false, playable: false, content: null, contentPromise: null, zoomed: false };
+  const tvCtl = { noiseOn: false, playable: false, content: null, contentPromise: null, watching: false, live: false, lastT: -1, gn: 0 };
   anim.push(() => {
     if (!tvCtl.noiseOn) return;
     const d = tv.noiseData;
     for (let i = 0; i < d.length; i += 4) { const v = (Math.random() * 255) | 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
     tv.noiseTex.needsUpdate = true;
+  });
+
+  // layar TV saat video tampil: perbarui tekstur video hanya bila ada frame baru
+  anim.push(() => {
+    const c = tvCtl.content;
+    if (!tvCtl.live || !c?.video) return;
+    const v = c.video;
+    if (v.currentTime !== tvCtl.lastT || v.seeking) { tvCtl.lastT = v.currentTime; c.tex.needsUpdate = true; }   // unggah ke GPU hanya saat ada frame baru
+    if (!v.paused && ++tvCtl.gn % TV_FX.grainEvery === 0) tv.grainTex.offset.set(Math.random(), Math.random());     // grain berganti pelan → flicker lembut
   });
 
   /* ---------------- Etalase + koper ---------------- */
@@ -1167,6 +1225,11 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     const v = VIEWS[name];
     const portrait = camera.aspect < 0.85;
     const tanHalf = Math.tan((camera.fov / 2) * DEG);
+    if (v.fill) {            // area video persis memenuhi viewport (contain, tanpa bingkai; overscan ±12% agar tepi cembung kaca CRT keluar dari viewport)
+      const dist = Math.max(v.h / 2 / tanHalf, v.w / 2 / (tanHalf * camera.aspect)) * TV_FILL;
+      const target = new THREE.Vector3(...v.t);
+      return { pos: target.clone().add(new THREE.Vector3(...v.dir).normalize().multiplyScalar(dist)), look: target };
+    }
     const w = portrait ? v.pw : v.w;
     const pad = portrait ? 1.5 : 1.3;
     const dist = Math.max((v.h * pad) / 2 / tanHalf, (w * 1.08) / 2 / (tanHalf * camera.aspect));
@@ -1320,11 +1383,13 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
   function tvReset() {
     ballTl?.kill(); ballTl = null;
     gsap.killTweensOf([tv.screenGroup.scale, tv.onMat.color, tv.glow, ballSt]);
-    tvCtl.noiseOn = false; tvCtl.playable = false; tvCtl.zoomed = false;
+    tvCtl.noiseOn = false; tvCtl.playable = false; tvCtl.watching = false; tvCtl.live = false; stopLoopId('tvstatic');
+    gsap.killTweensOf([tv.overlayMat, tv.grainMat]); tv.overlayMat.opacity = 1; tv.grainMat.opacity = 0;
+    tvCtl.content?.player?.abort();                // video dihentikan, musik & ambience kembali
     tv.screenGroup.visible = false; tv.screenGroup.scale.set(1, 1, 1);
     tv.offGlass.visible = true;
     tv.onMat.color.setRGB(1, 1, 1);
-    tv.onMat.map = tv.noiseTex;
+    tv.onMat.map = tv.noiseTex; tv.onMat.userData.u.uBgOn.value = 0;
     tv.glow.intensity = 0;
     tv.led.material.color.set(0x3a1410);
     const v = tvCtl.content?.video;
@@ -1384,15 +1449,15 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     state = 'handoff';
     ui.hint(null);
     canvas.style.cursor = 'default';
-    actor?.hop();
-    gsap.to(actorState, {
+    gsap.to(actorState, {   // (tanpa loncatan ekstra setelah koper diketuk; juga tanpa SFX 'hop' pengiringnya)
       fade: 0, duration: 0.7, delay: 0.25,
       onComplete: () => { if (state === 'handoff') { killActor(); state = 'off'; } },
     });
     gsap.to(markerMat, { opacity: 0, duration: 0.3 });
     gsap.to(glowMat, { opacity: 0, duration: 0.3 });
     camTween?.kill(); camTween = null;
-    gsap.to(fx, { cover: 1, duration: 1.4, delay: 0.1, ease: 'power2.inOut', onUpdate: applyFx });
+    loadTVContent();                    // preload video TV sejak koper diketuk (jauh sebelum scene 12)
+    gsap.to(fx, { cover: 1, duration: 1.4, delay: 0.1, ease: 'power2.inOut', onStart: () => sfx('glass_up'), onUpdate: applyFx });
     gsap.to(fx, { light: 1, duration: 2.0, ease: 'power1.inOut', onUpdate: applyFx });
     onOpen?.();
   }
@@ -1416,17 +1481,27 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
       const src = CONFIG.assets.s12_video;
       if (await mediaExists(src)) {
         const video = document.createElement('video');
-        video.src = src; video.preload = 'auto'; video.loop = false;
+        // Dimuat sebagai blob: video selalu bisa di-seek (slider timeline) walau server statis tidak mendukung HTTP Range (serve.ps1). Gagal → URL langsung.
+        let url = src;
+        try { const res = await fetch(src); if (res.ok) url = URL.createObjectURL(await res.blob()); } catch { /* pakai URL langsung */ }
+        video.src = url; video.preload = 'auto'; video.loop = false;
         video.playsInline = true; video.setAttribute('playsinline', '');
+        // VideoTexture langsung (frame video diunggah ke GPU apa adanya, tanpa salinan kanvas 2D yang berat). Letterbox 'contain' lewat transform UV;
+        // area di luar video dihitamkan di shader layar (lihat tv.onMat.onBeforeCompile).
         const tex = new THREE.VideoTexture(video);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        video.addEventListener('loadedmetadata', () => {      // "cover": isi layar 4:3, sisi video yang berlebih dipotong
+        tex.colorSpace = THREE.SRGBColorSpace; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+        const fit = () => {
           const va = video.videoWidth / video.videoHeight, sa = TV_SCREEN.w / TV_SCREEN.h;
           if (!isFinite(va) || !va) return;
-          if (va > sa) { tex.repeat.set(sa / va, 1); tex.offset.set((1 - sa / va) / 2, 0); }
-          else { tex.repeat.set(1, va / sa); tex.offset.set(0, (1 - va / sa) / 2); }
-        });
-        return { tex, video };
+          const u = tv.onMat.userData.u;
+          if (va > sa) { const f = sa / va; tex.repeat.set(1, 1 / f); tex.offset.set(0, -(1 - f) / 2 / f); u.uCover.value.set(f, 1); }      // video lebih lebar → bar atas/bawah (diisi background blur)
+          else { const f = va / sa; tex.repeat.set(1 / f, 1); tex.offset.set(-(1 - f) / 2 / f, 0); u.uCover.value.set(1, f); }              // video lebih tinggi → bar kiri/kanan
+          u.uTexRep.value.copy(tex.repeat); u.uTexOff.value.copy(tex.offset);
+        };
+        video.addEventListener('loadedmetadata', fit); fit();
+        video.addEventListener('loadeddata', () => { tex.needsUpdate = true; });
+        const player = createTVPlayer(video, { onExit: afterWatching });
+        return { tex, video, player };
       }
       return { tex: tvPlaceholderTexture(CONFIG.recipient, src), video: null };
     })();
@@ -1443,8 +1518,9 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     const bx = ax + mouth.x * ACTOR_H, bz = az + 0.05;
     const startY = (mouth.y - ACTOR_FOOT) * ACTOR_H;
     const bounce = gsap.parseEase('bounce.out');
-    let said = false;
+    let said = false, pv = 0;   // pv: progres pantulan sebelumnya (deteksi lantai)
     ball.vis = true; ball.prevX = null;
+    sfx('ball_pop');                         // bola melompat keluar dari tas
     ballSt.h = 0; ballSt.v = 0;
     const apply = () => {
       const { h, v } = ballSt;                       // h = jarak mendatar (melambat) · v = pantulan vertikal
@@ -1452,6 +1528,12 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
       ball.z = THREE.MathUtils.lerp(bz, BALL_END.z, h);
       const s = Math.min(1, v / 0.2);
       ball.y = BALL_R + (startY - BALL_R) * (1 - bounce(v)) + (v < 0.2 ? 0.2 * 4 * s * (1 - s) : 0);   // melompat keluar dulu, lalu jatuh
+      // SFX pantulan tepat saat bola menyentuh lantai: titik sentuh ease bounce.out sudah pasti (v = 1/2.75, 2/2.75, 2.5/2.75, 1),
+      // jadi dipicu saat progres melewatinya — tidak bergantung FPS. Makin akhir makin pelan.
+      let hit = -1;   // beberapa titik bisa terlewati dalam satu frame (FPS rendah) → bunyikan yang terakhir saja
+      for (let k = 0; k < BOUNCE_HITS.length; k++) if (pv < BOUNCE_HITS[k] && v >= BOUNCE_HITS[k]) hit = k;
+      if (hit >= 0) sfx('ball_bounce', { volume: BOUNCE_VOL[hit] });
+      pv = v;
       if (!said && h > 0.78) { said = true; ui.setStage(12); }
     };
     apply();
@@ -1472,6 +1554,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     screenGroup.visible = true;
     onMat.map = tv.noiseTex; onMat.needsUpdate = true;
     tvCtl.noiseOn = true;
+    sfx('tv_on'); startLoop('tvstatic');   // klik TV + desis statis selama layar bersalju
     led.material.color.set(0x7cff5b);
     gsap.fromTo(screenGroup.scale, { y: 0.02 }, { y: 1, duration: 0.4, ease: 'power3.out' });
     gsap.fromTo(onMat.color, { r: 3, g: 3, b: 3 }, { r: 1, g: 1, b: 1, duration: 0.6 });
@@ -1480,26 +1563,51 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     if (my !== runId) return;
 
     tvCtl.noiseOn = false;
+    stopLoopId('tvstatic');
     onMat.map = content.tex; onMat.needsUpdate = true;
+    onMat.userData.u.uBgOn.value = content.video ? 1 : 0;   // background blur hanya untuk video
+    if (content.video) gsap.to(tv.overlayMat, { opacity: TV_FX.overlay, duration: 0.8 });   // garis scan / vinyet 3D diredam saat video tampil
     gsap.fromTo(onMat.color, { r: 2.4, g: 2.4, b: 2.4 }, { r: 1, g: 1, b: 1, duration: 0.5 });
     const video = content.video;
-    if (video) {
-      video.currentTime = 0; video.muted = false;
-      video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
-    }
-    ui.confetti?.();
+    if (video) { tvCtl.live = true; tvCtl.lastT = -1; gsap.to(tv.grainMat, { opacity: TV_FX.grain, duration: 0.8 }); }   // frame pertama + grain tipis; video diputar otomatis setelah zoom
+    // (confetti TIDAK di sini: baru muncul setelah video selesai, bersamaan dengan pop-up)
     // bersorak, lalu melambai terima kasih (tangan kanan saja; tas tetap dijinjing)
     actor?.gesture('marvel', { speed: MARVEL_SPEED });   // satu gestur: kagum/kaget melihat TV, dipercepat
-    flyTo('tvMid', 2.6, 'power2.inOut');
+    const mid = flyTo('tvMid', 2.6, 'power2.inOut');
     await sleep(1.5);
     if (my !== runId) return;
-    tvCtl.playable = !!video;
-    if (video) ui.hint('Ketuk layar TV untuk jeda / putar');
-    ui.showEnd?.(() => {
-      tvCtl.zoomed = !tvCtl.zoomed;
-      flyTo(tvCtl.zoomed ? 'tvClose' : 'tvMid', 1.4, 'power2.inOut');
-      return tvCtl.zoomed;
-    });
+    if (!video) { ui.confetti?.(); ui.showEnd?.(null); return; }   // tanpa video (placeholder): perilaku lama
+    await mid;                                      // confetti & gestur kagum selesai → zoom in ke layar, video langsung diputar otomatis
+    await sleep(0.6);
+    if (my !== runId) return;
+    startWatching();
+  }
+
+  /** Pemain memilih menonton (ketuk TV / tombol): zoom in halus → video diputar dengan kontrol minimalis. */
+  async function startWatching() {
+    const c = tvCtl.content;
+    if (!c?.player || tvCtl.watching || state !== 'tv') return;
+    const my = runId;
+    tvCtl.watching = true;
+    ui.hideEnd?.(); ui.hint(null);
+    c.player.prime();                              // putar ulang dari tombol (gestur): izinkan play() setelah zoom
+    sfx('whoosh');
+    await flyTo('tvClose', 1.5, 'power2.inOut');
+    if (my !== runId || !tvCtl.watching) return;
+    c.player.start();
+  }
+  /** Video selesai / ditutup: zoom out halus, kembali ke alur normal (tombol putar ulang tersedia). */
+  async function afterWatching({ ended }) {
+    const my = runId;
+    tvCtl.watching = false;
+    if (ended) await sleep(0.5);
+    if (my !== runId) return;
+    sfx('whoosh');
+    flyTo('tvMid', 1.5, 'power2.inOut');
+    await sleep(0.9);
+    if (my !== runId || tvCtl.watching) return;
+    ui.showEnd?.(startWatching, '↻ Putar ulang');   // pop-up tombol baru muncul SETELAH video selesai / ditutup
+    if (ended) ui.confetti?.();                      // confetti + SFX-nya (tepat 1×) bersamaan dengan pop-up, hanya saat video benar-benar selesai
   }
 
   /**
@@ -1522,7 +1630,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     if (pose) {
       cur.pos.copy(pose.pos); cur.look.copy(pose.look);
       fx.cover = 1; fx.light = 1; applyFx();
-      gsap.to(fx, { cover: 0, duration: 1.7, delay: 0.5, ease: 'power2.inOut', onUpdate: applyFx });
+      gsap.to(fx, { cover: 0, duration: 1.7, delay: 0.5, ease: 'power2.inOut', onStart: () => sfx('glass_down'), onUpdate: applyFx });
       gsap.to(fx, { light: 0, duration: 2.4, delay: 0.3, ease: 'power1.inOut', onUpdate: applyFx });
       camDone = flyTo('tvWide', 4.2, 'power2.inOut');
     } else {
@@ -1571,7 +1679,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     ray.setFromCamera(ndc, camera);
     return ray.intersectObjects([caseRoot, marker], true).length > 0;
   }
-  const tvTappable = () => state === 'tv' && tvCtl.playable;
+  const tvTappable = () => false;   // tanpa tombol / ketuk "tonton TV": video diputar otomatis
   function pickTV(e) {
     const r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -1593,10 +1701,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     const d = down; down = null;
     if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) return;
     if (state === 'ready') { if (pickCase(e)) openCase(); }
-    else if (tvTappable() && pickTV(e)) {                 // ketuk TV → jeda / putar video
-      const v = tvCtl.content?.video;
-      if (v) { if (v.paused) v.play().catch(() => {}); else v.pause(); }
-    }
+    else if (tvTappable() && pickTV(e)) startWatching();     // ketuk TV → mulai menonton
   });
   canvas.addEventListener('pointercancel', () => { down = null; });
 
@@ -1654,7 +1759,10 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
 
   if (new URLSearchParams(location.search).has('debug')) window.__shop = { scene, camera, ROOM, free: null };
 
-  return { scene, camera, enter, enterTV, leave, update, resize, getCamPose, showCaseMode };
+  /** Dipanggil di dalam klik "Tutup Koper" (gestur pengguna): membuka kunci putar video untuk autoplay bersuara di scene 12. */
+  function primeTV() { tvCtl.content?.player?.prime(); }
+
+  return { scene, camera, enter, enterTV, leave, update, resize, getCamPose, showCaseMode, primeTV };
 }
 // Dipakai ulang oleh street3d.js (scene 3)
 export { rng, std, box, rbox, put, mesh, canvasTex, markerTexture, dotTexture };

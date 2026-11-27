@@ -1,9 +1,11 @@
 import { gsap } from 'gsap';
 import { CONFIG } from './config.js';
 import { SCENES_2D } from './scenes2d.js';
-import { h, mediaExists } from './assets.js';
+import { h } from './assets.js';
 import { createGasing3D } from './gasing3d.js';
 import { createDebugPanel } from './debug.js';
+import { audio } from './audio.js';
+import { createAudioIndicator } from './audio-indicator.js';
 
 const TITLES = {
   1: 'Tiket', 2: 'Di Kereta', 3: 'Surabaya', 4: 'Toko Antik',
@@ -18,7 +20,7 @@ const el = {
   action: $('actionBtn'), hint: $('hint'), counter: $('counter'),
   note: $('note'), noteTitle: $('noteTitle'), noteBody: $('noteBody'), noteClose: $('noteClose'),
   flash: $('flash'), fader: $('fader'), confetti: $('confetti'),
-  endBar: $('endBar'), endZoom: $('endZoom'), endRestart: $('endRestart'),
+  endBar: $('endBar'), endWatch: $('endWatch'), endRestart: $('endRestart'),
   start: $('start'), startBtn: $('startBtn'), startTitle: $('startTitle'),
   mute: $('muteBtn'), error: $('error'),
 };
@@ -38,6 +40,7 @@ let debugPanel = null;
 function setStage(n) {
   stage = n;
   debugPanel?.update(n);
+  audio.setScene(n);          // musik & ambience scene ini (crossfade), SFX pembuka, preload scene berikutnya
 }
 
 // Subtitle/caption dihapus — dibiarkan no-op supaya pemanggil di scene tidak error.
@@ -64,7 +67,8 @@ function showAction(label, fn, opts = {}) {
   gsap.fromTo(el.action, { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(2)', clearProps: 'all' }); // clearProps: sisa style inline GSAP tidak menimpa hover CSS
 }
 function hideAction() { el.action.hidden = true; actionHandler = null; }
-el.action.addEventListener('click', () => { const fn = actionHandler; hideAction(); fn?.(); });
+el.action.addEventListener('click', () => { const fn = actionHandler; audio.sfx('btn_press');   // dipakai tombol "Turun" (scene 2) dan "Tutup Koper" (scene 10)
+  hideAction(); fn?.(); });
 
 const pill = (node) => (text) => {
   node.hidden = !text;
@@ -93,12 +97,14 @@ function openNote(part, { engraved = false } = {}) {
   el.noteTitle.textContent = part.name;
   el.noteBody.replaceChildren(...part.text.map((s) => h('p', {}, s)));
   el.note.hidden = false;
+  if (!engraved) audio.sfx('open_paper');   // surat di scene 10; scene 8 (tulisan terukir) tanpa suara buka/tutup
   gsap.fromTo(el.note.querySelector('.note-paper'), { y: 30, opacity: 0, scale: 0.96 }, { y: 0, opacity: 1, scale: 1, duration: 0.45, ease: 'power2.out' });
   gsap.fromTo(el.note, { opacity: 0 }, { opacity: 1, duration: 0.3 });
   el.noteClose.focus({ preventScroll: true });
   return new Promise((resolve) => {
     const close = () => {
       cancelNote = null;
+      if (!engraved) audio.sfx('close_paper');
       el.noteClose.removeEventListener('click', close);
       window.removeEventListener('keydown', onKey);
       gsap.to(el.note, { opacity: 0, duration: 0.25, onComplete: () => { el.note.hidden = true; resolve(); } });
@@ -117,27 +123,26 @@ function openNote(part, { engraved = false } = {}) {
   });
 }
 
-// Tombol akhir (scene 12 versi 3D): "Perbesar TV" memanggil onZoom() → true kalau sekarang diperbesar
-let endZoomHandler = null;
-function showEnd(onZoom) {
-  endZoomHandler = onZoom;
-  el.endZoom.textContent = '⤢ Perbesar TV';
+// Pop-up tombol akhir (scene 12 versi 3D): hanya muncul setelah video selesai / ditutup. "Putar ulang" memanggil onWatch() (zoom in + putar, lihat shop3d.js & tv-player.js)
+let endWatchHandler = null;
+function showEnd(onWatch, label = '↻ Putar ulang') {
+  endWatchHandler = onWatch;
+  el.endWatch.hidden = !onWatch;
+  el.endWatch.textContent = label;
   el.endBar.hidden = false;
   gsap.killTweensOf(el.endBar);
   gsap.fromTo(el.endBar, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 });
 }
 function hideEnd() {
-  endZoomHandler = null;
+  endWatchHandler = null;
   gsap.killTweensOf(el.endBar);
   el.endBar.hidden = true;
 }
-el.endZoom.addEventListener('click', () => {
-  const zoomed = endZoomHandler?.();
-  el.endZoom.textContent = zoomed ? '⤡ Kecilkan TV' : '⤢ Perbesar TV';
-});
-el.endRestart.addEventListener('click', () => { hideEnd(); goTo(1); });
+el.endWatch.addEventListener('click', () => { audio.sfx('btn_press'); endWatchHandler?.(); });
+el.endRestart.addEventListener('click', () => { audio.sfx('ui_click'); hideEnd(); goTo(1); });
 
 function confetti() {
+  audio.sfx('confetti');
   const colors = ['#e4572e', '#f2b134', '#b4d44e', '#3fa7d6', '#f6efe2', '#d16ba5'];
   const W = window.innerWidth, H = window.innerHeight;
   for (let i = 0; i < 140; i++) {
@@ -216,10 +221,12 @@ async function goTo(n, { fade: fadeColor = 'black', force = false } = {}) {
   const id = ++navId;
   const stale = () => id !== navId;
   if (force) gsap.killTweensOf(el.fader);
+  if (n > 2) audio.sfx('whoosh');   // tanpa whoosh saat masuk scene 1 dan 2
   await fade(1, fadeColor);
   if (stale()) return;
 
-  // bongkar scene lama
+  // bongkar scene lama (termasuk semua suaranya: one-shot, loop event, ambience)
+  audio.stopScene();
   active2d?.exit?.();
   gctx?.revert();
   active2d = null; gctx = null;
@@ -279,19 +286,13 @@ function showError(msg) {
   el.error.hidden = false;
 }
 
-/* ---------------- Musik ---------------- */
-let bgm = null;
-async function setupMusic() {
-  if (!(await mediaExists(CONFIG.assets.bgm))) return;
-  bgm = new Audio(CONFIG.assets.bgm);
-  bgm.loop = true;
-  bgm.volume = 0.5;
-  el.mute.hidden = false;
-  el.mute.addEventListener('click', () => {
-    bgm.muted = !bgm.muted;
-    el.mute.classList.toggle('is-muted', bgm.muted);
-  });
-}
+/* ---------------- Audio (musik, ambience, SFX: js/audio.js + js/audio-manifest.js) ---------------- */
+// Tombol mute lama dipakai ulang untuk semua bus audio.
+el.mute.hidden = false;
+el.mute.addEventListener('click', () => {
+  audio.setMuted(!audio.isMuted());
+  el.mute.classList.toggle('is-muted', audio.isMuted());
+});
 
 /* ---------------- Jeda otomatis saat tab / aplikasi tidak aktif ---------------- */
 // Semua <video>/<audio> (termasuk yang tidak ada di DOM, mis. video TV 3D) didaftarkan saat play(),
@@ -314,17 +315,15 @@ document.addEventListener('visibilitychange', () => {
 /* ---------------- Start ---------------- */
 const params = new URLSearchParams(location.search);
 const startScene = Math.min(TOTAL, Math.max(1, parseInt(params.get('scene') ?? '1', 10) || 1));
-const musicReady = setupMusic();
 
 let started = false;
 async function begin(n) {
   if (started) return;
   started = true;
+  audio.unlock().then(() => audio.sfx('btn_press'));   // klik tombol "Mulai Perjalanan"   // harus di dalam gestur (klik Mulai / panel debug): aturan autoplay iOS
   waveCall?.kill(); waveCall = null;
   el.startBtn.disabled = true;
   getWorld().catch((err) => console.warn('3D preload gagal:', err)); // preload selama scene 2D
-  await musicReady;
-  bgm?.play().catch(() => {});
   gsap.to(el.start, { opacity: 0, duration: 0.5, onComplete: () => el.start.remove() });
   goTo(n);
 }
@@ -350,6 +349,7 @@ if (params.has('debug')) {
     onSkipFadeChange: (v) => { skipFade = v; },
   });
   debugPanel.update(stage);
+  createAudioIndicator({ getScene: () => stage, titles: TITLES });   // nama file audio aktif (hanya ?debug)
   window.__debug = { jump: debugJump, get scene() { return stage; } };
 }
 

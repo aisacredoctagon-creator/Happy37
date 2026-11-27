@@ -102,8 +102,8 @@ export const CONFIG = {
 
     s11_bg: 'assets/scene11/bg-toko-antik.jpg',
 
-    s12_video: 'assets/scene12/video-ulang-tahun.mp4',
+    s12_video: 'assets/video akhir/1030.mp4',   // versi ringan 720p; asli di assets/video akhir/_backup/
 
-    bgm: 'assets/audio/bgm.mp3',
+    // musik, ambience & SFX: semua path/volume ada di js/audio-manifest.js (slot bgm lama = SOUNDS.journey di sana)
   },
 };

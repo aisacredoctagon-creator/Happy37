@@ -79,7 +79,7 @@ Cukup taruh file dengan nama berikut — website otomatis memakainya. Yang belum
 | `assets/scene5/bg-3d.jpg` | Background di belakang scene 3D (opsional) |
 | `assets/scene11/bg-toko-antik.jpg` | Background scene bola & TV — hanya versi 2D cadangan (scene 11–12 3D memakai toko prosedural) |
 | `assets/scene12/video-ulang-tahun.mp4` | **Video ucapan** yang diputar di layar TV CRT 3D (rasio bebas; dipotong "cover" ke layar 4:3). Belum ada → layar placeholder |
-| `assets/audio/bgm.mp3` | Musik latar (opsional; tombol ♪ muncul otomatis) |
+| `assets/audio/` (`music/`, `amb/`, `sfx/`) | **Musik, ambience & SFX** (CC0). Semua path/volume/loop di `js/audio-manifest.js`; daftar lengkap & cara mengganti di **AUDIO.md**, kredit di `assets/audio/CREDITS.md`. Tombol 🔇 membisukan semua |
 
 Model 3D (koper & bagian kereta) saat ini masih primitif Three.js — lihat `buildPartModel()` di `js/world3d.js` untuk menggantinya dengan model GLB nanti.
 

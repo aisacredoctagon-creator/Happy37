@@ -18,6 +18,7 @@ import { gsap } from 'gsap';
 import { createGasing3D, GESTURE_TIMING } from './gasing3d.js';
 import { buildSotoServer } from './server3d.js';
 import { CONFIG } from './config.js';
+import { sfx } from './audio.js';
 import { rng, std, box, put, mesh, canvasTex, markerTexture, dotTexture } from './shop3d.js';
 
 const DEG = Math.PI / 180;
@@ -32,6 +33,8 @@ const PORCH_H = 0.06;
 const ACTOR_H = 1.55, ACTOR_FOOT = 0.1;
 const START = { x: -9.8, z: 2.7 };
 const STAND = { x: -3.5, z: 1.95 };        // menunggu di sini sebelum gerobak diketuk
+const EAT_TEXTS = ['Nyam...nyam...nyam...', 'Sotonya lezat sekali! mmm!'];   // dua gelembung pikiran berurutan saat makan soto
+const EAT_HOPS = 9;                      // lama makan soto: jumlah loncatan senang (×0,8 dtk) sebelum scene lanjut. 4 = ±1 suapan, 9 = ±3 suapan
 const EAT_AT = { x: -2.1, z: 1.5 };        // berdiri di depan gerobak saat makan
 
 // Penjual soto: '3d' = model toon (server3d.js); '2d' = gambar assets/scene3/penjual-soto.png sebagai sprite
@@ -828,6 +831,12 @@ function wire(a, b, sag) {
 /* ============================================================
    createStreet
 ============================================================ */
+/**
+ * Posisi speech bubble scene 3, relatif posisi dasar (kanan-atas maskot): x = geser ke kanan (−: kiri), y = geser ke bawah (−: atas),
+ * pecahan lebar / tinggi scene. Bisa diatur lewat slider di panel debug (?debug → "💬 speech bubble"). free = true → abaikan anti-tabrakan maskot.
+ */
+export const BUBBLE_OFFSET = { x: -0.06, y: 0.11, free: true };   // free: true = tanpa anti-tabrakan (posisi persis sesuai x / y)
+
 export function createStreet({ renderer, canvas, ui, onDone }) {
   const scene = new THREE.Scene();
   scene.background = skyTexture();
@@ -1270,11 +1279,66 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
 
   /* ---------------- Gasing (DOM) yang berjalan di trotoar 3D ---------------- */
   // Tas tenis dijinjing sarung tangan kiri Gasing (satu elemen: createGasing3D({ bag: true }))
-  let actorWrap = null, actor = null, bubbleEl = null;
-  const A = { x: START.x, z: START.z, fade: 1, walking: false, hopAt: 0, baseH: 400, bubble: 0 };
+  let actorWrap = null, actor = null, bubbleEl = null, bubbleText = null, bubbleSvg = null;
+  const bub = { w: 0, h: 0, tailX: 0, tailY: 0, y: null, side: 'r', maxW: 260, cl: 0, cr: 0, cb: 0 };   // ukuran awan (px) & posisi ujung ekor, relatif sudut kiri-atas elemen
+  const A = { x: START.x, z: START.z, fade: 1, walking: false, hopAt: 0, baseH: 400, bubble: 0, text: 0 };
   const tmp = new THREE.Vector3();
   const pw = new THREE.Vector3();
   const canvasSize = { w: 1, h: 1 };
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  /* Gelembung pikiran: awan lengkung tak seragam (outline tebal) dibangun dari ukuran teks, jadi tidak gepeng / rusak untuk teks apa pun. */
+  function setBubbleText(text) {
+    bubbleText.textContent = text;
+    layoutBubble(bub.side, bub.maxW);
+  }
+  /** side: 'r' = bubble di kanan Gasing (ekor ke kiri), 'l' = di kiri (ekor ke kanan). maxW = lebar teks maksimum (px) agar muat di sisi itu. */
+  const BUBBLE_TAIL = 52;   // lebar area ekor (3 bulatan) di sisi yang menghadap Gasing
+  function layoutBubble(side = 'r', maxW = 260) {
+    if (!bubbleEl) return;
+    bub.side = side; bub.maxW = maxW;
+    bubbleText.style.width = 'max-content';
+    bubbleText.style.maxWidth = Math.max(90, maxW) + 'px';   // teks panjang membungkus jadi beberapa baris, tidak keluar layar
+    const tw = bubbleText.offsetWidth, th = bubbleText.offsetHeight;
+    const LOBE = 10, PADX = 26, PADY = 17;
+    const bw = tw + PADX * 2, bh = Math.max(th + PADY * 2, bw * 0.34);   // tinggi minimum → bentuk tidak gepeng
+    const ox = LOBE + 4, oy = LOBE + 4;                                    // ruang untuk tonjolan & garis
+    const cx = side === 'r' ? ox + BUBBLE_TAIL : ox;                      // sisi yang menghadap Gasing diberi ruang untuk ekor
+    const W = BUBBLE_TAIL + bw + ox * 2, H = bh + oy * 2 + 46;   // +46: ruang ekor di bawah awan
+    // titik di sepanjang keliling "pil" (stadium); antar titik digambar busur lingkaran → lengkungan awan yang halus, sambungan runcing rapi
+    const r = bh / 2, L = Math.max(0, bw - bh), per = 2 * L + 2 * Math.PI * r;
+    const at = (d) => {
+      d = ((d % per) + per) % per;
+      if (d < L) return { x: cx + r + d, y: oy };                                                    // sisi atas
+      d -= L; if (d < Math.PI * r) { const a = -Math.PI / 2 + d / r; return { x: cx + r + L + r * Math.cos(a), y: oy + r + r * Math.sin(a) }; }   // ujung kanan
+      d -= Math.PI * r; if (d < L) return { x: cx + r + L - d, y: oy + bh };                         // sisi bawah
+      d -= L; const a = Math.PI / 2 + d / r; return { x: cx + r + r * Math.cos(a), y: oy + r + r * Math.sin(a) };                                // ujung kiri
+    };
+    const n = Math.max(8, Math.round(per / 44));
+    let seed = 7 + text_len();
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const ds = []; for (let i = 0; i < n; i++) ds.push(i * per / n + (rnd() - 0.5) * (per / n) * 0.14);   // jarak hampir merata (seimbang)
+    let d = '';
+    for (let i = 0; i < n; i++) {
+      const p = at(ds[i]), q = at(i + 1 === n ? ds[0] + per : ds[i + 1]);
+      const chord = Math.hypot(q.x - p.x, q.y - p.y), rr = (chord / 2) * (1.28 + rnd() * 0.3);   // tonjolan bervariasi tapi seimbang
+      if (i === 0) d += `M${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+      d += `A${rr.toFixed(1)} ${rr.toFixed(1)} 0 0 1 ${q.x.toFixed(1)} ${q.y.toFixed(1)}`;
+    }
+    // 3 bulatan ekor yang mengecil teratur (rasio ≈ 0,66) menjulur ke arah Gasing (samping), sedikit turun
+    // ekor: dari sudut bawah awan menurun diagonal ke arah Gasing (kiri-bawah untuk bubble di kanan-atas; dicerminkan untuk sisi kiri)
+    const bot = oy + bh, dir = side === 'r' ? -1 : 1, e0 = side === 'r' ? cx : cx + bw;
+    const tails = [[e0 - dir * 18, bot + 16, 8.6], [e0 + dir * 2, bot + 30, 5.7], [e0 + dir * 18, bot + 41, 3.7]];
+    bubbleSvg.setAttribute('width', W); bubbleSvg.setAttribute('height', H);
+    bubbleSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    bubbleSvg.innerHTML = `<path class="sb-cloud" d="${d}Z"/>` + tails.map(([x, y, rad], i) => `<circle class="sb-dot sb-dot${i}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad}"/>`).join('');
+    Object.assign(bubbleText.style, { left: cx + PADX + 'px', top: oy + (bh - th) / 2 + 'px', width: tw + 'px' });
+    Object.assign(bubbleEl.style, { width: W + 'px', height: H + 'px' });
+    bub.cl = cx - LOBE; bub.cr = cx + bw + LOBE; bub.cb = oy + bh + LOBE;   // tepi awan (relatif elemen) untuk uji tabrakan dengan maskot
+    bub.w = W; bub.h = H; bub.tailX = tails[2][0]; bub.tailY = tails[2][1] + tails[2][2];
+    function text_len() { return (bubbleText.textContent || '').length; }
+  }
+  window.addEventListener('resize', () => layoutBubble(bub.side, bub.maxW));
 
   function spawnActor() {
     killActor();
@@ -1282,13 +1346,17 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     actorWrap.className = 'shop-actors';
     actor = createGasing3D({ label: 'Gasing berjalan di Surabaya sambil menjinjing tas tenis', className: 'shop-gasing', yaw: 0.4, bag: true });
     bubbleEl = document.createElement('div');
-    bubbleEl.className = 'street-bubble';
-    bubbleEl.textContent = 'Nyam! Sotonya mantap 😋';
+    bubbleEl.className = 'street-bubble';   // gelembung pikiran bergaya gambar tangan: awan SVG + 3 bulatan ekor
+    bubbleText = document.createElement('span');
+    bubbleText.className = 'street-bubble-text';
+    bubbleSvg = document.createElementNS(SVG_NS, 'svg');
+    bubbleEl.append(bubbleSvg, bubbleText);
     actorWrap.append(actor, bubbleEl);
+    setBubbleText(EAT_TEXTS[0]);
     canvas.after(actorWrap);
     sizeActor();
   }
-  function killActor() { actorWrap?.remove(); actorWrap = null; actor = null; bubbleEl = null; }
+  function killActor() { actorWrap?.remove(); actorWrap = null; actor = null; bubbleEl = null; bubbleText = null; bubbleSvg = null; bub.y = null; }
   function sizeActor() {
     if (!actor) return;
     const h = Math.round(Math.min(canvasSize.h * 0.5, 560));
@@ -1337,11 +1405,42 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     const tilt = A.walking ? Math.sin(t * 7.5) * 2.2 : 0;
     const y = A.z < WALL_Z + 2.2 ? DOOR.y : 0;       // di teras sedikit lebih tinggi
     standAt(actor, pw.set(A.x, y, A.z), ACTOR_H, 1000 / 1193, ACTOR_FOOT, tilt, A.fade);
-    // gelembung ucapan di atas kepala Gasing
+    // gelembung pikiran di KANAN-ATAS Gasing (pindah ke kiri-atas bila tidak muat), jarak GAP px; ekor menunjuk ke Gasing,
+    // awan tidak menyentuh maskot, dan seluruhnya dijepit di dalam layar. Dihitung ulang tiap frame → benar saat resize / Gasing bergerak.
     if (A.bubble > 0.001) {
-      const { sx, sy, px } = projectPoint(pw.set(A.x, ACTOR_H * 0.82, A.z));
-      bubbleEl.style.opacity = String(Math.min(1, A.bubble));
-      bubbleEl.style.transform = `translate3d(${(sx + px * 0.34).toFixed(1)}px, ${(sy - px * 0.16).toFixed(1)}px, 0) translateY(-100%) scale(${(0.6 + 0.4 * A.bubble).toFixed(3)})`;
+      const r = actor.getBoundingClientRect(), wr = actorWrap.getBoundingClientRect();
+      const GAP = Math.max(10, r.width * 0.16), EDGE = 8, MIN_W = 90;         // GAP = jarak ke maskot, relatif ukuran maskot (≈20 px pada ukuran normal)
+      const OFF_X = wr.width * BUBBLE_OFFSET.x, OFF_Y = wr.height * BUBBLE_OFFSET.y;   // geser bubble relatif ukuran scene
+      const left = r.left - wr.left, right = r.right - wr.left;
+      const roomR = wr.width - right - GAP - EDGE, roomL = left - GAP - EDGE;
+      const chrome = 18 + 2 * 14 + 2 * 26;                                     // ekor + margin awan + padding teks: di luar lebar teks
+      const side = roomR - chrome >= 150 || roomR >= roomL ? 'r' : 'l';
+      const maxW = Math.min(260, Math.max(MIN_W, (side === 'r' ? roomR : roomL) - chrome));
+      if (side !== bub.side || Math.abs(maxW - bub.maxW) > 8) layoutBubble(side, maxW);
+      const tx = side === 'r' ? right + GAP + OFF_X : left - GAP - OFF_X, ty = r.top - wr.top - GAP + OFF_Y;   // ujung ekor: sudut kanan-atas kotak maskot, digeser GAP ke luar
+      let x = tx - bub.tailX, y = ty - bub.tailY;
+      x = Math.max(EDGE, Math.min(wr.width - bub.w - EDGE, x));
+      y = Math.max(EDGE, Math.min(wr.height - bub.h - 70, y));              // tidak menutupi tombol / petunjuk di bawah
+      // anti-tabrakan: siluet maskot ≈ kolom kepala (sempit, di atas) + badan (lebar, di bawah), bukan seluruh kotaknya.
+      // Awan & ujung ekor dinaikkan hanya bila masih menyentuh siluet (jarak aman M), supaya bisa sedekat mungkin tanpa menyentuh.
+      const M = Math.max(5, r.width * 0.04), gT = r.top - wr.top, gB = r.bottom - wr.top;
+      const bodyT = gT + r.height * 0.34;
+      const parts = [[left + r.width * 0.34, gT, left + r.width * 0.66, bodyT], [left, bodyT, right, gB]];
+      const clear = (yy) => {
+        const boxes = [[x + bub.cl, yy, x + bub.cr, yy + bub.cb], [x + bub.tailX - 5, yy + bub.tailY - 10, x + bub.tailX + 5, yy + bub.tailY]];
+        return !boxes.some((q) => parts.some((p) => q[0] < p[2] + M && q[2] > p[0] - M && q[1] < p[3] + M && q[3] > p[1] - M));
+      };
+      if (!BUBBLE_OFFSET.free) for (let g = 0; g < 160 && y > EDGE && !clear(y); g++) y -= 3;
+      bub.y = y;
+      const p = A.bubble, st = (a, b) => Math.max(0, Math.min(1, (p - a) / (b - a)));
+      bubbleEl.style.opacity = String(Math.min(1, p * 2.5));
+      bubbleText.style.opacity = String(A.text);
+      bubbleEl.style.transform = `translate3d(${x.toFixed(1)}px, ${bub.y.toFixed(1)}px, 0)`;
+      const c = bubbleSvg.children;   // [awan, bulatan 0, 1, 2]: bulatan kecil muncul dulu, lalu awan
+      c[3].style.transform = `scale(${st(0, 0.35).toFixed(3)})`;
+      c[2].style.transform = `scale(${st(0.15, 0.5).toFixed(3)})`;
+      c[1].style.transform = `scale(${st(0.3, 0.65).toFixed(3)})`;
+      c[0].style.transform = `scale(${(0.4 + 0.6 * st(0.45, 1)).toFixed(3)})`;
     } else {
       bubbleEl.style.opacity = '0';
     }
@@ -1387,7 +1486,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     cart.steam.k = 1;
     cartMarker.material.opacity = 0; shopMarker.material.opacity = 0;
     cartRing.material.opacity = 0; shopRing.material.opacity = 0;
-    A.fade = 1; A.bubble = 0; A.walking = false;
+    A.fade = 1; A.bubble = 0; A.text = 0; A.walking = false;
     state = 'off';
     canvas.style.cursor = 'default';
   }
@@ -1431,15 +1530,27 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     await cam;
     if (my !== runId) return;
 
-    gsap.fromTo(A, { bubble: 0 }, { bubble: 1, duration: 0.4, ease: 'back.out(2)' });
+    setBubbleText(EAT_TEXTS[0]);
+    A.text = 0;
+    gsap.fromTo(A, { bubble: 0 }, { bubble: 1, duration: 0.3, ease: 'power1.out' });
+    gsap.to(A, { text: 1, duration: 0.25, delay: 0.3, ease: 'power1.out' });   // teks muncul setelah bubble selesai
     serverHop();                       // penjual ikut senang menyajikan soto
     actor?.setState?.('eat');          // tas diletakkan, tangan memegang mangkuk & sendok
     await sleep(1.4);                  // beri waktu: letakkan tas → angkat mangkuk → suapan pertama
     if (my !== runId) return;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < EAT_HOPS; i++) {   // ±0,8 dtk per loncatan; siklus suapan 2,6 dtk → scene baru berakhir setelah suapan ke-3
       actor?.hop();
       await sleep(0.8);
       if (my !== runId) return;
+      if (i === 3) {                     // pertengahan makan: gelembung pertama → kedua
+        gsap.to(A, { bubble: 0, duration: 0.2 });
+        await sleep(0.3);
+        if (my !== runId) return;
+        setBubbleText(EAT_TEXTS[1]);
+        A.text = 0;
+        gsap.to(A, { bubble: 1, duration: 0.3, ease: 'power1.out' });
+        gsap.to(A, { text: 1, duration: 0.25, delay: 0.3, ease: 'power1.out' });
+      }
     }
     actor?.setState?.('idle');
     gsap.to(A, { bubble: 0, duration: 0.3 });
@@ -1465,6 +1576,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     gsap.to(A, { fade: 0, duration: 0.7, delay: 3.2, ease: 'power1.in' });
     await walkAlong([[A.x, A.z], [0.9, 2.3], [3.4, 1.7], [4.5, -0.7], [DOOR.x, DOOR.z]], 4.0, { ease: 'power1.inOut' });
     if (my !== runId) return;
+    sfx('shop_bell');                  // bel pintu toko berbunyi saat Gasing tiba di ambang pintu
     ui.flash?.(0.8);
     gsap.to(fx, { door: 1, duration: 0.6, onUpdate: applyFx });
     flyTo('door', 0.9, 'power2.in');
@@ -1502,6 +1614,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     const d = down; down = null;
     if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) return;
     if (!pickTarget(e)) return;
+    if (state === 'cart' || state === 'shop') sfx('btn_press');   // ketukan diterima
     if (state === 'cart') eat();
     else if (state === 'shop') goShop();
   });

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { gsap } from 'gsap';
 import { CONFIG } from './config.js';
+import { sfx, sfxAny } from './audio.js';
 import { createShop, tagTexture } from './shop3d.js';
 import { createStreet } from './street3d.js';
 
@@ -653,6 +654,7 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   function spin(i, dir) {
     const w = wheels[i];
     w.idx += dir;
+    sfx('lock_tick', { rate: dir > 0 ? 1.06 : 0.94 });   // klik roda angka (naik sedikit lebih tinggi, turun lebih rendah)
     gsap.to(w.group.rotation, { x: w.idx * STEP, duration: 0.28, ease: 'back.out(1.6)' });
     const code = wheels.map((x) => ((x.idx % 10) + 10) % 10);
     if (code.every((d, k) => d === CONFIG.lockCode[k])) unlock();
@@ -663,10 +665,11 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     ui.hint(null);
     ui.caption('Klik! Kodenya benar…');
     await wait(0.35);
+    sfx('lock_open');                                  // gembok terbuka, bersamaan dengan pengait terlepas
     latches.forEach((l, k) => gsap.to(l.rotation, { x: -0.9, duration: 0.35, delay: k * 0.12, ease: 'back.out(3)' }));
     await wait(0.5);
     await flyTo({ name: 'closed' }, 1.0);
-    gsap.to(lidPivot.rotation, { x: LID_OPEN, duration: 1.8, ease: 'power2.inOut' });
+    gsap.to(lidPivot.rotation, { x: LID_OPEN, duration: 1.8, ease: 'power2.inOut', onStart: () => sfx('lid_open') });
     await flyTo({ name: 'open' }, 2.0, 'power2.inOut');
     toParts();
   }
@@ -683,13 +686,15 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     if (from === 'start') {
       ui.setStage(7);
       ui.flash(1.0);
+      sfx('whoosh');
       await flyTo({ name: 'part1', index: i }, 1.1, 'power2.inOut');
       await wait(0.3);
+      sfx('zoom2');                                // zoom kedua sampai teks muncul (scene 8)
       await flyTo({ name: 'engrave', index: i }, 1.1, 'power3.inOut');
     }
     ui.setStage(8);
     await ui.openNote(p.cfg, { engraved: true });
-    ui.flash(0.6);
+    ui.flash(0.6); sfx('whoosh');   // keluar dari surat: zoom out
     await flyTo({ name: 'open' }, 1.2, 'power2.inOut');
     await placePart(p);
   }
@@ -735,6 +740,7 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
           p.ghost.visible = false;
           p.placed = true;
           placedCount++;
+          sfxAny(['click_1', 'click_2', 'click_3']);        // bagian masuk ke cetakan
           const bo = toLocal(0, 0.08, 0);   // pantulan kecil "ke atas" (dunia)
           gsap.fromTo(p.obj.position, { x: b.x + bo.x, y: b.y + bo.y, z: b.z + bo.z }, { x: b.x, y: b.y, z: b.z, duration: 0.35, ease: 'bounce.out' });
           if (placedCount >= parts.length) assemble();
@@ -753,8 +759,10 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     state = 'busy';
     ui.counter(null);
     ui.caption('Semua bagian terpasang!');
+    sfx('whoosh');                                 // scene 9: pengganti 'assembled'
     await wait(0.5);
     // kereta yang terbaring miring berputar tegak kembali (bentuk seperti sebelumnya) sambil terangkat melayang
+    sfx('lift_train', { fit: 1.8, fadeIn: 0.5, fadeOut: 0.5 });   // kereta terangkat: fade-out selesai saat gerakan berhenti (1,8 dtk)
     gsap.to(train.rotation, { x: 0, duration: 1.7, ease: 'power2.inOut' });
     gsap.to(train.position, { y: 0, z: 0, duration: 1.7, ease: 'power2.inOut' });
     gsap.to(trainRoot.position, { y: FLOAT_Y, z: 0.6, duration: 1.8, ease: 'power2.inOut', onComplete: () => { floating = true; } });
@@ -766,6 +774,7 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
 
   async function closeCase() {
     state = 'busy';
+    shop?.primeTV?.();                 // masih di dalam klik pengguna: izinkan video scene 12 diputar otomatis dengan suara
     setHover(null);
     floating = false;
     ui.hideAction();
@@ -775,11 +784,13 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     gsap.to(train.rotation, { y: fullTurns, x: 0, duration: 1.0, ease: 'power2.inOut' });
     await flyTo({ name: 'open' }, 1.0);
     // kereta direbahkan lagi ke posisi terbaring miring seperti sebelum dirakit, sambil turun ke cetakan
+    sfx('lift_train', { fit: 1.1, fadeIn: 0.5, fadeOut: 0.5 });   // kereta ditaruh kembali: selesai bersamaan dengan gerakan (1,1 dtk)
     gsap.to(train.rotation, { x: SIDE_POSE.rx, y: fullTurns, z: 0, duration: 1.1, ease: 'power2.inOut' });
     gsap.to(train.position, { x: 0, y: SIDE_POSE.y, z: SIDE_POSE.z, duration: 1.1, ease: 'power2.inOut' });
     await new Promise((r) => gsap.to(trainRoot.position, { y: MOULD_Y, z: 0, duration: 1.1, ease: 'power2.inOut', onComplete: r }));
-    gsap.to(lidPivot.rotation, { x: 0, duration: 1.4, ease: 'power2.inOut' });
+    gsap.to(lidPivot.rotation, { x: 0, duration: 1.4, ease: 'power2.inOut', onStart: () => sfx('lid_open'), onComplete: () => sfx('lid_close') });   // bunyi saat tutup benar-benar menutup
     await flyTo({ name: 'closed' }, 1.5);
+    sfx('case_latch');
     latches.forEach((l, k) => gsap.to(l.rotation, { x: 0, duration: 0.3, delay: k * 0.12 }));
     await wait(0.9);
     state = 'done';
