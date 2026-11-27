@@ -20,6 +20,7 @@ Semua file sudah diproses ulang (dipotong, dibuat loop dengan crossfade, dinorma
 | `amb/station.mp3` | Shopping mall less crowded.ogg | natalie | Domain publik | https://commons.wikimedia.org/wiki/File:Shopping_mall_less_crowded.ogg |
 | `amb/train.mp3` | Taiwan railways EP727 train cars sounds.ogg | Jidanni | CC0 | https://commons.wikimedia.org/wiki/File:Taiwan_railways_EP727_train_cars_sounds.ogg |
 | `amb/street.mp3` | Sunday in the city street noise2.ogg | cori | Domain publik | https://commons.wikimedia.org/wiki/File:Sunday_in_the_city_street_noise2.ogg |
+| `amb/bus gerak.mp3` | *(disediakan pemilik proyek — sumber & lisensi belum dicatat; mohon dilengkapi)* | — | — | — |
 | `amb/clock.mp3` | Ticking clock → `ticking_clock.wav` | bart | CC0 | https://opengameart.org/content/ticking-clock |
 | `amb/tvstatic.mp3` | Frequency Static Sound Effects → `static1.wav` | bretbernhoft | CC0 | https://opengameart.org/content/frequency-static-sound-effects |
 

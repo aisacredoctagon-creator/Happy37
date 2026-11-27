@@ -10,7 +10,8 @@ export const AUDIO_BASE = 'assets/audio/';
 export const BUSES = { master: 0.9, music: 0.32, ambience: 0.22, sfx: 0.85 };
 
 /** Detik. crossfade = ganti musik/ambience antar scene · stop = memudar saat scene dibongkar · duck = turun/naik saat video TV. */
-export const FADE = { crossfade: 1.0, stop: 1.0, duck: 1.0, music: 1.0, ambienceOut: 1.5 };
+export const FADE = { crossfade: 1.0, stop: 1.0, duck: 1.0, music: 1.0, ambienceOut: 1.5, scene0Out: 2.4 };
+// FADE.scene0Out (detik) = ambience street + suara bus memudar saat "Mulai Perjalanan" ditekan (selama Gasing berjalan masuk stasiun).
 // FADE.music (detik) = fade in saat musik mulai, fade out saat berhenti, dan crossfade antar lagu berbeda (ambience tetap memakai crossfade/stop).
 
 /** Saat video ucapan di TV diputar, musik & ambience dikali angka ini (hening penuh, fade ±1 dtk). */
@@ -35,7 +36,9 @@ export const SOUNDS = {
   station:  { file: 'amb/ambience stasiun.mp3',  bus: 'ambience', volume: 0.8, loop: true },
   train:    { file: 'amb/train.mp3',    bus: 'ambience', volume: 1.0, loop: true },
   street:   { file: 'amb/street.mp3',   bus: 'ambience', volume: 0.8, loop: true },
-  clock:    { file: 'amb/clock.mp3',    bus: 'ambience', volume: CLOCK_VOLUME, loop: true },
+  street0:  { file: 'amb/street.mp3',   bus: 'ambience', volume: 0.5, loop: true },   // scene 0: file yang sama dengan 'street', tapi pelan — di bawah suara bus (≈ −10 dB)
+  bus_gerak: { file: 'amb/bus gerak.mp3', bus: 'ambience', volume: 0.7, loop: false },   // scene 0: SEKALI (36,96 dtk), dijalankan lewat audio.playTimed → animasi bus mengikuti waktu file ini (timestamp di js/scene0.js, konstanta T)
+  clock:   { file: 'amb/clock.mp3',    bus: 'ambience', volume: CLOCK_VOLUME, loop: true },
   tvstatic: { file: 'amb/tvstatic.mp3', bus: 'ambience', volume: 0.9, loop: true },   // dinyalakan/dimatikan oleh event TV (scene 12)
   // ---- SFX: antarmuka & transisi
   ui_start: { file: 'sfx/ui_start.mp3', bus: 'sfx', volume: 0.61 },
@@ -86,7 +89,8 @@ export const SOUNDS = {
  * preload = SFX yang dipakai scene ini (dimuat bersama scene; scene berikutnya dipreload di latar).
  */
 export const SCENES = {
-  1:  { ambience: 'station', onEnter: ['station_chime'], preload: ['paper', 'stamp'] },   // tanpa musik
+  0:  { ambience: 'street0', ambienceFade: 2.5, preload: ['bus_gerak', 'hop'] },   // opening: street (fade in 2,5 dtk) + suara bus (playTimed) + boing Gasing; tanpa musik
+  1:  { ambience: 'station', onEnter: ['station_chime'], music: 'perjalanan', musicAfter: 'station_chime', preload: ['paper', 'stamp', 'perjalanan'] },   // musik 'lagu di perjalanan' mulai SETELAH chime selesai (event ended), fade in FADE.music; berlanjut ke scene 2–3 tanpa restart
   2:  { music: 'perjalanan', ambience: 'train', preload: ['toko'] },   // lagu toko dimuat lebih awal (file besar)
   3:  { music: 'perjalanan', ambience: 'street', preload: ['spoon_a', 'spoon_b', 'nom', 'shop_bell'] },
   4:  { music: 'toko', ambience: 'clock', preload: ['glass_up'] },

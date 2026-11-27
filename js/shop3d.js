@@ -1606,7 +1606,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     flyTo('tvMid', 1.5, 'power2.inOut');
     await sleep(0.9);
     if (my !== runId || tvCtl.watching) return;
-    ui.showEnd?.(startWatching, '↻ Putar ulang');   // pop-up tombol baru muncul SETELAH video selesai / ditutup
+    ui.showEnd?.(startWatching, 'Lihat ucapan');   // pop-up tombol baru muncul SETELAH video selesai / ditutup
     if (ended) ui.confetti?.();                      // confetti + SFX-nya (tepat 1×) bersamaan dengan pop-up, hanya saat video benar-benar selesai
   }
 

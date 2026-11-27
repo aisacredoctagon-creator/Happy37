@@ -5,6 +5,7 @@
 //  - setScene(n): crossfade musik & ambience scene n, preload scene berikutnya.
 //  - stopScene(): memudarkan ambience + one-shot scene lama (saat pindah / loncat scene).
 //  - sfx(id): one-shot dengan batas suara bersamaan, jarak minimum & variasi pitch (tidak menumpuk keras).
+//  - preload(ids): decode sebelum gestur (layar "Mulai"); playTimed(id): putar sekali + jam h.time() untuk animasi; fadeOutAmbient(): keluar scene 0.
 //  - duck(true/false): musik & ambience hampir hening (video ucapan TV).
 //  - File yang tidak ada / gagal decode → diabaikan (peringatan sekali), game tidak error.
 // ============================================================
@@ -31,6 +32,12 @@ const notify = () => listeners.forEach((fn) => { try { fn(); } catch {} });
 
 function warnOnce(id, msg) { failed.set(id, msg); if (!warned.has(id)) { warned.add(id); console.warn(`[audio] ${msg}`); } }
 
+// Decode boleh dilakukan SEBELUM gestur pertama: AudioContext sungguhan baru dibuat saat unlock() (membuat AudioContext tanpa gestur
+// memicu peringatan autoplay di console), jadi sebelum itu memakai OfflineAudioContext. AudioBuffer-nya tetap bisa diputar di ctx.
+const decoded = new Map();   // id → AudioBuffer (sinkron, dipakai playTimed supaya mulai tanpa menunggu)
+let offline = null;
+const decoder = () => ctx || (offline ??= new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, 44100));
+
 /** Muat & decode satu suara (sekali). Tidak ada / gagal → null, tanpa melempar. */
 function load(id) {
   if (buffers.has(id)) return buffers.get(id);
@@ -38,10 +45,17 @@ function load(id) {
   if (!def) { warnOnce(id, `id tidak dikenal: ${id}`); buffers.set(id, Promise.resolve(null)); return buffers.get(id); }
   const p = fetch(AUDIO_BASE + def.file)
     .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
-    .then((ab) => new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej)))   // bentuk callback: Safari lama
+    .then((ab) => new Promise((res, rej) => decoder().decodeAudioData(ab, res, rej)))   // bentuk callback: Safari lama
+    .then((buf) => { decoded.set(id, buf); return buf; })
     .catch((err) => { notify(); warnOnce(id, `gagal memuat ${def.file} (${err?.message || err}) — suara dilewati`); return null; });
   buffers.set(id, p);
   return p;
+}
+/** Semua id suara yang dipakai scene n + SFX global (untuk layar pemuatan). */
+export const soundsForScene = (n) => [...new Set([...GLOBAL_SFX, ...sceneIds(n)])];
+/** Muat & decode (tanpa membunyikan, tanpa gestur) daftar id; onTick(id, ok) tiap selesai satu. Tidak pernah menolak. */
+export function preload(ids, onTick) {
+  return Promise.all(ids.map((id) => load(id).then((b) => { try { onTick?.(id, !!b); } catch {} return b; })));
 }
 const sceneIds = (n) => {
   const s = SCENES[n]; if (!s) return [];
@@ -82,7 +96,9 @@ export async function unlock() {
     s.buffer = b; s.connect(ctx.destination); s.start(0);
     unlocked = true;
     GLOBAL_SFX.forEach(load);
-    Object.keys(SOUNDS).forEach((id) => { if (SOUNDS[id].bus !== 'music') load(id); });   // preload semua SFX & ambience; musik (file besar) dipreload per scene
+    // preload semua SFX & ambience; musik (file besar) dipreload per scene. Ditunda 4 dtk: "Mulai" sekarang tepat memulai intro scene 0
+    // (animasi mengikuti audio), jadi fetch massal ini tidak boleh bersaing dengan frame pertama.
+    setTimeout(() => Object.keys(SOUNDS).forEach((id) => { if (SOUNDS[id].bus !== 'music') load(id); }), 4000);
     if (wantScene) setScene(wantScene, { force: true });
   }
   notify();
@@ -123,15 +139,20 @@ function stopLoop(slot, fade = FADE.stop) {
 }
 
 /** Scene aktif berubah (termasuk lanjut otomatis di dunia 3D): crossfade musik & ambience, SFX onEnter, preload scene berikut. */
+let sceneTok = 0;   // naik tiap pergantian scene: callback tertunda (musik menunggu chime) dibatalkan bila scene sudah berganti
 export function setScene(n, { force = false } = {}) {
   wantScene = n;
   if (!ctx || !unlocked) return;
   if (n === curScene && !force) return;
   curScene = n;
+  const tok = ++sceneTok;
   const s = SCENES[n] || {};
-  playLoop('music', s.music || null, FADE.music);
-  playLoop('ambience', s.ambience || null, s.ambience ? undefined : FADE.ambienceOut);   // tanpa ambience di scene ini → fade-out ±1,5 dtk lalu stop total
-  (s.onEnter || []).forEach((id) => sfx(id));
+  // s.musicAfter = id SFX yang harus SELESAI dulu (event "ended") sebelum musik s.music mulai (fade-in FADE.music). Kalau musik itu sudah berjalan
+  // (mis. replay lewat debug) diteruskan tanpa restart; kalau ada musik LAIN yang berjalan, dipudarkan dulu (crossfade ke hening) supaya tidak menumpuk.
+  const waitMusic = !!(s.musicAfter && s.music && loops.music?.id !== s.music);
+  playLoop('music', waitMusic ? null : (s.music || null), FADE.music);
+  playLoop('ambience', s.ambience || null, s.ambience ? s.ambienceFade : FADE.ambienceOut);   // tanpa ambience di scene ini → fade-out ±1,5 dtk lalu stop total; s.ambienceFade = fade-in khusus scene (mis. scene 0)
+  (s.onEnter || []).forEach((id) => sfx(id, waitMusic && id === s.musicAfter ? { onEnded: () => { if (tok === sceneTok) playLoop('music', s.music, FADE.music); } } : undefined));
   preloadScene(n);
   preloadScene(n + 1);
   notify();
@@ -140,9 +161,10 @@ export function setScene(n, { force = false } = {}) {
 /** Bongkar scene: hentikan one-shot & loop tambahan scene lama, pudarkan ambience (musik diteruskan bila scene baru sama). */
 export function stopScene() {
   if (!ctx) return;
-  curScene = 0;
+  curScene = 0; sceneTok++;
   for (const id of [...loops.extra.keys()]) stopLoop('extra:' + id, FADE.stop);
   stopLoop('ambience', FADE.stop);
+  for (const h of [...timed]) h.stop(FADE.stop);
   for (const [, vs] of voices) for (const v of vs) fadeOut(v, 0.12);
   voices.clear();
   if (ducked) duck(false);
@@ -156,14 +178,17 @@ function fadeOut(v, t) {
  * Dibatasi maxVoices & minGap per id supaya pemicu beruntun (pantulan, loncat, klik roda) tidak menumpuk keras.
  */
 export function sfx(id, opts = {}) {
-  if (!ctx || !unlocked || muted || silenced) return;
-  const def = SOUNDS[id]; if (!def) { warnOnce(id, `id tidak dikenal: ${id}`); return; }
+  // opts.onEnded: dipanggil SEKALI saat suara selesai (event "ended"); bila suara tidak jadi diputar (mute, dibisukan, gagal muat) → dipanggil segera
+  // (asinkron) supaya yang menunggu (musik scene 1) tidak menggantung. Dibatalkan sendiri oleh pemanggil lewat token scene.
+  let fin = opts.onEnded; const done = () => { const f = fin; fin = null; try { f?.(); } catch {} };
+  if (!ctx || !unlocked || muted || silenced) { if (fin) setTimeout(done, 0); return; }
+  const def = SOUNDS[id]; if (!def) { warnOnce(id, `id tidak dikenal: ${id}`); done(); return; }
   const t = now();
-  if (def.minGap && t - (lastAt.get(id) ?? -9) < def.minGap) return;
+  if (def.minGap && t - (lastAt.get(id) ?? -9) < def.minGap) { done(); return; }
   lastAt.set(id, t);
   load(id).then((buf) => {
-    if (silenced) return;                      // dibisukan saat jeda panggilan (mis. video TV): tidak ada SFX terjadwal yang lolos
-    if (!buf || !ctx) { sfxLog.set(id, { n: 0, endAt: Date.now(), fail: true }); notify(); return; }
+    if (silenced) { done(); return; }                      // dibisukan saat jeda panggilan (mis. video TV): tidak ada SFX terjadwal yang lolos
+    if (!buf || !ctx) { sfxLog.set(id, { n: 0, endAt: Date.now(), fail: true }); notify(); done(); return; }
     const list = voices.get(id) || [];
     const max = def.maxVoices ?? 4;
     while (list.length >= max) fadeOut(list.shift(), 0.04);   // suara tertua memudar cepat
@@ -186,8 +211,83 @@ export function sfx(id, opts = {}) {
     const v = { src, gain: g, t0: t };
     list.push(v); voices.set(id, list);
     const rec = sfxLog.get(id) || { n: 0, endAt: 0, fail: false }; rec.n++; rec.fail = false; sfxLog.set(id, rec); notify();
-    src.onended = () => { rec.n = Math.max(0, rec.n - 1); rec.endAt = Date.now(); notify(); const l = voices.get(id); if (l) { const i = l.indexOf(v); if (i >= 0) l.splice(i, 1); } try { src.disconnect(); g.disconnect(); } catch {} };
+    src.onended = () => { done(); rec.n = Math.max(0, rec.n - 1); rec.endAt = Date.now(); notify(); const l = voices.get(id); if (l) { const i = l.indexOf(v); if (i >= 0) l.splice(i, 1); } try { src.disconnect(); g.disconnect(); } catch {} };
   });
+}
+
+/**
+ * Putar SEKALI dengan jam sendiri: animasi (scene 0) mengikuti h.time() — posisi file yang sedang TERDENGAR, bukan setTimeout terpisah.
+ * ctx.currentTime ikut berhenti saat tab disembunyikan (ctx.suspend) dan lanjut saat kembali → animasi & suara tetap sinkron.
+ * opts: { volume (×manifest), fadeIn (dtk, default 1), fadeOut (dtk di ujung bagian terakhir, default 3), segments: [{ from, to }] (detik file; dimainkan berurutan, disambung crossfade selebar xfade, default 0,8) }.
+ * time() = posisi FILE yang terdengar (melompat di sambungan antar-bagian). Mengembalikan { id, duration, ended, time(), stop(fade) } — atau null bila audio belum aktif / file belum termuat (pemanggil memakai jam cadangan).
+ */
+const timed = new Set();
+export function playTimed(id, opts = {}) {
+  const def = SOUNDS[id], buf = decoded.get(id);
+  if (!ctx || !unlocked || !def || !buf) { if (def && !buf) load(id); return null; }
+  const dur = buf.duration;
+  // segments: bagian file yang diputar berurutan [{ from, to }] (detik file); sambungan antar-bagian = crossfade daya-sama selebar xfade yang
+  // DIPUSATKAN di batas (bagian sebelumnya terus berbunyi xfade/2 melewati `to`, bagian berikutnya mulai xfade/2 sebelum `from`) → tanpa klik / lompatan volume.
+  // File tidak diubah dan kecepatan putar tetap 1×; bagian tengah yang tidak tercantum tidak dimainkan.
+  const segs = (opts.segments || [{ from: 0, to: dur }]).map((s) => ({ from: Math.max(0, s.from), to: Math.min(dur, s.to) }));
+  const n = segs.length, xf = n > 1 ? Math.min(opts.xfade ?? 0.8, ...segs.map((s) => s.to - s.from)) : 0;
+  const S = []; let total = 0; for (const s of segs) { S.push(total); total += s.to - s.from; }   // detik berlalu (jam audio) saat tiap bagian dimulai
+  const vol = Math.min(1.5, (def.volume ?? 1) * (opts.volume ?? 1));
+  const T0 = ctx.currentTime + 0.03;
+  const fi = Math.min(opts.fadeIn ?? 1, total / 2), fo = Math.min(opts.fadeOut ?? 3, total / 2);
+  const N = 64, cin = new Float32Array(N), cout = new Float32Array(N);
+  for (let k = 0; k < N; k++) { const a = (k / (N - 1)) * Math.PI / 2; cin[k] = vol * Math.sin(a); cout[k] = vol * Math.cos(a); }
+  const nodes = [];
+  segs.forEach((s, i) => {
+    const pre = i > 0 ? xf / 2 : 0, post = i < n - 1 ? xf / 2 : 0;
+    const startAt = T0 + S[i] - pre, len = s.to - s.from + pre + post;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = 0;
+    g.gain.setValueAtTime(0, startAt);
+    if (i === 0) g.gain.linearRampToValueAtTime(vol, startAt + fi);           // fade in di awal
+    else { g.gain.setValueCurveAtTime(cin, startAt, xf); }                       // crossfade masuk
+    if (i < n - 1) g.gain.setValueCurveAtTime(cout, startAt + len - xf, xf);    // crossfade keluar
+    else { g.gain.setValueAtTime(vol, startAt + len - fo); g.gain.linearRampToValueAtTime(0, startAt + len); }   // fade out di ujung: bus menjauh
+    src.connect(g).connect(bus[def.bus] || bus.sfx);
+    src.start(startAt, s.from - pre, len);
+    nodes.push({ src, g });
+  });
+  const h = {
+    id, duration: total, ended: false,
+    paused() { return ctx.state !== 'running'; },   // ctx di-suspend (tab disembunyikan): jam audio berhenti
+    /** true setelah audio benar-benar berjalan (ctx running dan jam audio sudah melewati awal) — jam audio kasar & diam beberapa frame di awal play / saat di-suspend. */
+    running() { return ctx.state === 'running' && ctx.currentTime - T0 - Math.min(0.3, ctx.outputLatency || 0) > 0.001; },
+    /** Posisi FILE (detik) yang sedang terdengar — melompat di batas antar-bagian; kontinu di dalam bagian. */
+    time() {
+      const lat = Math.min(0.3, ctx.outputLatency || 0);
+      const e = Math.max(0, Math.min(total, ctx.currentTime - T0 - lat));
+      let i = n - 1; while (i > 0 && e < S[i]) i--;
+      return Math.min(segs[i].to, segs[i].from + (e - S[i]));
+    },
+    stop(fade = 1) {
+      if (h.ended || h.stopping) return;
+      h.stopping = true;
+      const t = ctx.currentTime;
+      for (const { src, g } of nodes) {
+        const cur = g.gain.value;
+        try { g.gain.cancelScheduledValues(t); } catch {}
+        g.gain.setValueAtTime(cur, t);
+        g.gain.setTargetAtTime(0, t, Math.max(0.01, fade / 4));   // fade-out halus (tanpa klik), src dihentikan setelah ≈ −45 dB
+        try { src.stop(t + fade * 1.4 + 0.3); } catch {}
+      }
+    },
+  };
+  let alive = n;
+  nodes.forEach(({ src, g }) => { src.onended = () => { try { src.disconnect(); g.disconnect(); } catch {} if (--alive === 0) { h.ended = true; timed.delete(h); } }; });
+  timed.add(h);
+  return h;
+}
+
+/** Pudarkan ambience scene + semua suara playTimed (SFX one-shot dibiarkan): dipakai saat keluar dari scene 0. */
+export function fadeOutAmbient(fade = FADE.stop) {
+  if (!ctx) return;
+  stopLoop('ambience', fade);
+  for (const h of [...timed]) h.stop(fade);
 }
 
 /** Putar satu id acak dari daftar; id yang sama tidak terpilih dua kali berturut-turut (per daftar). */
@@ -285,4 +385,4 @@ document.addEventListener('visibilitychange', () => {
   else if (unlocked) ctx.resume().catch(() => {});
 });
 
-export const audio = { unlock, setScene, stopScene, sfx, sfxAny, attachMedia, silenceGame, isSilenced, startLoop, stopLoopId, duck, bindDuckToMedia, setMuted, isMuted, setBusVolume, getBusVolume, isReady, soundIds, getStatus, onChange, preview };
+export const audio = { unlock, preload, soundsForScene, playTimed, fadeOutAmbient, setScene, stopScene, sfx, sfxAny, attachMedia, silenceGame, isSilenced, startLoop, stopLoopId, duck, bindDuckToMedia, setMuted, isMuted, setBusVolume, getBusVolume, isReady, soundIds, getStatus, onChange, preview };

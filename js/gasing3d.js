@@ -54,13 +54,14 @@ const BAG_HOLD = { x: -1.0, y: 1.75 };           // titik gantung tas di punggun
 // Tas tenis di PUNGGUNG (melayang, tidak menyentuh badan maupun tangan); diletakkan di lantai saat makan soto
 const BAG_BACK = { dist: 2.65, y: 1.75 };          // titik gantung (puncak tali): jarak di belakang sumbu badan (searah punggung) & tinggi; muka tas ±0.3 dari badan
 const BAG_FLOOR_POS = { x: -3.3, z: -1.2 };       // posisi tas di lantai saat makan, relatif badan (x + = kanan badan, z + = depan badan)
-const BAG_DOWN_T = 0.9, BAG_UP_T = 0.9;           // detik transisi tas punggung → lantai dan lantai → punggung
+export const BAG_DOWN_T = 0.9; const BAG_UP_T = 0.9;           // detik transisi tas punggung → lantai dan lantai → punggung
 const BAG_ARC = 0.35;                             // tas sedikit terangkat (busur) di tengah transisi
 const BAG_FOLLOW = 9;                             // 1/s: seberapa cepat tas menyusul posisi & arah hadap badan (lag halus, tanpa overshoot)
 const BAG_LAG_MAX = 0.45;                         // rad: tas boleh tertinggal paling jauh segini dari arah punggung (saat belok) → tidak pernah masuk ke area tangan
 const BAG_HAND_SEP = 0.9;                         // rad: jarak sudut minimum (di sekeliling badan) antara tas dan tangan yang mendekat → tas menghindar, tidak tersentuh
 const BAG_YAW = 0.3;
-const BAG_SIDE_SEP_K = 0.5;                       // pengali BAG_HAND_SEP untuk tas dengan bagSide ≠ 0 (scene 1 & 2)
+const BAG_SIDE_SEP_K = 0.5;                       // pengali BAG_HAND_SEP untuk tas dengan bagSide ≥ 0.5 rad (scene 1 & 2); di antara 0 dan 0.5 rad dicampur linear
+const BAG_SIDE_RATE = 5;                          // 1/s: laju bagSide menyusul nilai baru (setBagSide) — ±0,5 dtk untuk 1,1 rad → 0
 /* ------------------------------------------------------------
    TANGAN — desain sarung tangan (sumber kebenaran: preview/hand-preview-src.js)
    Kerangka lokal tangan: +Y ke arah jari, +X sisi jempol, +Z punggung tangan, jari menekuk ke −Z.
@@ -125,7 +126,7 @@ const BODY_R = { loX: 2.35, loZ: 2.1, hiX: 1.75, hiZ: 1.6 };   // elips badan (b
 const LIM = { fw: [-1.2, 1.6], lat: [-0.9, 3.4], r: [0.9, 5.0], w: 1.2, wLock: 0.15 };
 
 // Makan (kerangka dunia-badan, satuan model). Koreografi T = 2.6 s: menyendok 0–.18, mengangkat .18–.55, di mulut .55–.68, kembali .68–1.
-const EAT_T = 2.6;
+export const EAT_T = 2.6;
 const BOWL_S = 1.3;                               // skala mangkuk
 // Pembagian tangan saat makan soto. BOWL_SIDE = sisi LAYAR tangan pemegang mangkuk: +1 = kanan layar (= tangan KIRI Gasing, Gasing menghadap kamera),
 // −1 = kiri layar. Tangan lainnya memegang sendok. Koreografi ditulis di kerangka tangan masing-masing (RF; tangan kiri = cermin), jadi cukup ganti ini.
@@ -383,7 +384,7 @@ export function createGasing3D({ label = 'Karakter Gasing', className = '', yaw 
   // Panggilan sebelum model 3D siap ditahan sebentar (≤ 2 detik) lalu diputar ulang — dulu hop/wobble hilang begitu saja.
   const early = [];            // [nama, args, waktu]
   const sinceEarly = (e) => performance.now() - e[2];
-  el.hop = () => { early.push(['hop', [], performance.now()]); if (early.length > 8) early.shift(); };
+  el.hop = (o) => { early.push(['hop', [o], performance.now()]); if (early.length > 8) early.shift(); };
   el.wobble = () => { early.push(['wobble', [], performance.now()]); if (early.length > 8) early.shift(); };
   el.gesture = (name, o) => {
     const prev = early.findIndex((e) => e[0] === 'gesture');
@@ -393,13 +394,15 @@ export function createGasing3D({ label = 'Karakter Gasing', className = '', yaw 
   let pendingState = 'idle';   // setState sebelum model 3D siap
   el.setState = (s) => { pendingState = s; };
   el.move = () => {};   // kecepatan sebelum model siap diabaikan (dikirim ulang tiap frame oleh pemanggil)
+  let pendingBagSide = null;   // setBagSide sebelum model 3D siap
+  el.setBagSide = (v) => { pendingBagSide = v; };
 
   const showFallback = () => {
     el.classList.add('is-fallback');
     // gambar statis: tidak ada gestur. onDone tetap dipanggil (cancelled) supaya rantai pemanggil tidak menggantung.
     early.forEach((e) => { if (e[0] === 'gesture') Promise.resolve().then(() => e[1][1]?.onDone?.({ cancelled: true, fallback: true })); });
     early.length = 0;
-    el.hop = el.wobble = () => {};
+    el.hop = el.wobble = el.setBagSide = () => {};
     el.gesture = (name, o) => { Promise.resolve().then(() => o?.onDone?.({ cancelled: true, fallback: true })); };
     const img = new Image();
     img.src = CONFIG.assets.gasing;
@@ -418,6 +421,8 @@ export function createGasing3D({ label = 'Karakter Gasing', className = '', yaw 
       el.setState = inst.setState;
       el.gesture = inst.gesture;
       el.move = inst.move;
+      el.setBagSide = inst.setBagSide;
+      if (pendingBagSide != null) inst.setBagSide(pendingBagSide);
       el.bagMouthOffset = inst.bagMouth;   // posisi mulut tas AKTUAL (ikut arah hadap); fallback: bagMouthOffset() statis
       if (pendingState !== 'idle') inst.setState(pendingState);
       instances.add(inst);
@@ -1166,11 +1171,16 @@ function mount(THREE, el, yaw, withBag = false, bagSide = 0) {
     carry.om = clampN(carry.om + (carry.om > 0 ? -1 : 1) * 2.6, -9, 9);
     carry.wobAt = t;
   };
-  const hop = () => {
+  // o.silent: tanpa boing (pemanggil membunyikannya sendiri, mis. scene 0 menyinkronkan boing dengan lengkung loncat di DOM) · o.volume: pengali volume boing
+  const hop = (o) => {
     if (disposed) return;
     const t = nowS();
-    if (t - hopStart > 0.75) { hopStart = t; wobble(); if (el.isConnected) sfx('hop'); }   // bunyi tepat saat loncatan benar-benar dimulai
+    if (t - hopStart > 0.75) { hopStart = t; wobble(); if (el.isConnected && !o?.silent) sfx('hop', o?.volume != null ? { volume: o.volume } : undefined); }   // bunyi tepat saat loncatan benar-benar dimulai
   };
+  // Sisi tas (rad) bisa diubah saat berjalan: scene 0 menunggu dengan tas di samping badan (bagSide, seperti scene 1–2), lalu 0 = tas di punggung
+  // (sama seperti scene 3/4/11 yang berjalan) begitu Gasing berbalik & melangkah. Menyusul halus (BAG_SIDE_RATE) → tas tidak melompat.
+  let bagSideNow = bagSide, bagSideTo = bagSide;
+  const setBagSide = (v) => { if (Number.isFinite(v)) bagSideTo = v; };
 
   // ---- Mesin gestur: ga = gestur aktif, gb = gestur yang sedang memudar (diinterupsi), gf = fidget idle.
   // Digerakkan sepenuhnya oleh render() (tanpa timer/Promise) → tidak ada yang tertinggal saat dispose().
@@ -1336,7 +1346,7 @@ function mount(THREE, el, yaw, withBag = false, bagSide = 0) {
     if (eatGo && el.isConnected) {
       const pu = prevEu;
       if (pu < 0.04 && eu >= 0.04) sfx(spoonFlip ? 'spoon_a' : 'spoon_b'), (spoonFlip = !spoonFlip);
-      if (pu < 0.55 && eu >= 0.55) sfx('nom');
+      if (pu < 0.55 && eu >= 0.55) { sfx('nom'); el.dispatchEvent(new CustomEvent('spoonmouth')); }   // sendok sampai di mulut (u ≈ 0.55): scene 3 memakainya untuk memunculkan gelembung pertama
     }
     prevEu = eatGo ? eu : 0;
     mouthA.getWorldPosition(mouthW);               // titik mulut DUNIA (ikut tilt badan, yaw, dan loncatan)
@@ -1529,14 +1539,16 @@ function mount(THREE, el, yaw, withBag = false, bagSide = 0) {
       C.rp.lerp(root.position, 1 - Math.exp(-dt * BAG_FOLLOW));       // ikut naik-turun / loncat badan dengan lag halus
       // posisi dalam koordinat POLAR di sekitar sumbu badan (sudut & jari-jari dicampur, bukan garis lurus):
       // jalur punggung ⇄ lantai melingkar di luar badan dan di luar jangkauan tangan, tidak memotong badan saat berbelok
-      const aBack = Math.PI + bagSide, rBack = BAG_BACK.dist;   // bagSide (rad, opsi createGasing3D): geser tas ke samping badan supaya terlihat saat menghadap kamera (+ = kiri layar)
+      bagSideNow += (bagSideTo - bagSideNow) * (1 - Math.exp(-dt * BAG_SIDE_RATE));
+      if (Math.abs(bagSideTo - bagSideNow) < 1e-3) bagSideNow = bagSideTo;
+      const aBack = Math.PI + bagSideNow, rBack = BAG_BACK.dist;   // bagSide (rad, opsi createGasing3D / setBagSide): geser tas ke samping badan supaya terlihat saat menghadap kamera (+ = kiri layar)
       const aFloor = Math.atan2(BAG_FLOOR_POS.x, BAG_FLOOR_POS.z), rFloor = Math.hypot(BAG_FLOOR_POS.x, BAG_FLOOR_POS.z);
       // sudut tas RELATIF terhadap arah hadap (lag terbatas + transisi ke lantai); tangan ikut berputar dengan badan, jadi selama
       // sudut relatif ini dijaga di sektor punggung, tas tidak pernah masuk jalur tangan — termasuk saat belok tajam
       let a = heading + aBack + wrapPI(C.head - heading) + wrapPI(aFloor - aBack) * w;
       const r = mix(rBack, rFloor, w);
       // tas menghindari tangan yang mendekat (sudut di sekeliling badan), selalu menghindar ke arah punggung (tidak berbalik sisi)
-      const handSep = bagSide ? BAG_HAND_SEP * BAG_SIDE_SEP_K : BAG_HAND_SEP;   // tas yang sengaja digeser ke samping (bagSide) boleh lebih dekat ke tangan (jarak aslinya tetap lega)
+      const handSep = BAG_HAND_SEP * mix(1, BAG_SIDE_SEP_K, clampN(Math.abs(bagSideNow) / 0.5, 0, 1));   // tas yang sengaja digeser ke samping (bagSide) boleh lebih dekat ke tangan (jarak aslinya tetap lega); kontinu terhadap bagSide → tanpa lompatan saat sisi berubah
       for (const H of hands) {
         H.G.root.getWorldPosition(_lv);
         const hx = _lv.x - C.rp.x, hz = _lv.z - C.rp.z;
@@ -1682,6 +1694,6 @@ function mount(THREE, el, yaw, withBag = false, bagSide = 0) {
     const x = p.x - BAG_DIMS.HANDLE_X * BAG_S, y = p.y - BAG_DIMS.HANDLE_H * BAG_S;
     return { x: x / vis, y: (y - (TARGET_Y - vis / 2)) / vis };
   };
-  const inst = { el, seen: false, born: performance.now(), render, dispose, hop, wobble, setState, gesture, info, setView, move, bagMouth };
+  const inst = { el, seen: false, born: performance.now(), render, dispose, hop, wobble, setState, gesture, info, setView, move, bagMouth, setBagSide };
   return inst;
 }
