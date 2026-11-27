@@ -207,8 +207,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .note-paper {
   position: relative;
-  width: 100%; max-width: 580px; max-height: 82dvh; overflow: auto;
-  padding: 34px clamp(20px, 5vw, 44px) 30px;
+  width: 100%; max-width: 900px; max-height: 86dvh; overflow: auto;
+  padding: 30px clamp(20px, 4vw, 48px) 28px;
   color: var(--ink);
   background: var(--paper);
   border-radius: 6px;
@@ -217,10 +217,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   -webkit-user-select: text; user-select: text;
 }
 .note-kicker { font-family: var(--font-display); color: var(--tomato); letter-spacing: .08em; text-transform: uppercase; font-size: 12px; }
-.note-paper h2 { font-family: var(--font-display); font-size: clamp(22px, 3vw, 30px); margin: 4px 0 14px; }
-.note-body { background: repeating-linear-gradient(to bottom, transparent 0 31px, rgba(31, 78, 95, .2) 31px 32px); }
-.note-body p { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(16px, 1.8vw, 18px); line-height: 32px; margin: 0; }
-.note-close {
+/* Surat: divisi = Tenor Sans, nama penulis = Cormorant Garamond Bold, isi surat = Cormorant Garamond Regular */
+.note-paper h2 { color: #0f0905; font-family: 'Tenor Sans', var(--font-display), sans-serif; font-weight: 400; font-size: clamp(24px, 3.2vw, 34px); margin: 4px 0 6px; letter-spacing: .02em; }
+.note-tagline { font-family: 'Tenor Sans', var(--font-display), sans-serif; font-size: 13px; letter-spacing: .22em; text-transform: uppercase; color: var(--tomato-dark); margin: 0 0 14px; }
+/* Garis buku tulis per ucapan (bukan per seluruh surat) → garis tetap sejajar dengan baris teks walau ada jarak antar ucapan */
+.note-msg { margin-bottom: 14px; background: repeating-linear-gradient(to bottom, transparent 0 31px, rgba(31, 78, 95, .2) 31px 32px); }
+.note-msg:last-child { margin-bottom: 0; }
+.note-body p { color: #0f0905; font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif; font-weight: 400; font-size: clamp(20px, 2.1vw, 23px); line-height: 32px; margin: 0; -webkit-text-stroke: .35px #0f0905; }
+.note-body .note-author { font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif; font-weight: 700; }.note-close {
   position: absolute; top: 10px; right: 10px;
   width: 44px; height: 44px; border-radius: 50%;
   border: 0; background: var(--ink); color: var(--paper);

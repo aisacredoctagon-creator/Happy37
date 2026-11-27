@@ -5,17 +5,6 @@
 //  belum ada, website menampilkan placeholder berlabel.
 // ============================================================
 
-const LOREM = [
-  'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
-  'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
-  'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.',
-  'Nisi ut aliquip ex ea commodo consequat duis aute irure dolor.',
-  'In reprehenderit in voluptate velit esse cillum dolore eu fugiat.',
-  'Nulla pariatur excepteur sint occaecat cupidatat non proident.',
-  'Sunt in culpa qui officia deserunt mollit anim id est laborum.',
-  'Curabitur pretium tincidunt lacus, nulla gravida orci a odio.',
-];
-
 export const CONFIG = {
   recipient: 'Pak Bram',
 
@@ -56,17 +45,79 @@ export const CONFIG = {
     12: 'Bolanya berhenti di dekat TV tua…',
   },
 
-  // 9 bagian kereta (Scene 6–8). `text` = 8 kalimat yang muncul saat di-zoom.
+  // 9 bagian kereta (Scene 6–8). `name` = nama bagian (petunjuk hover), `division` = judul surat (font Tenor Sans),
+  // `tagline` = kata kunci opsional di bawah judul, `messages` = ucapan per orang ({ author: Cormorant Garamond Bold,
+  // text: Cormorant Garamond Regular }), `closing` = kalimat penutup opsional. Urutan array = urutan bagian (jangan diubah).
   parts: [
-    { id: 'loco-roof',   name: 'Atap Lokomotif',   text: LOREM },
-    { id: 'car1-roof',   name: 'Atap Gerbong 1',   text: LOREM },
-    { id: 'car2-roof',   name: 'Atap Gerbong 2',   text: LOREM },
-    { id: 'loco-body',   name: 'Badan Lokomotif',  text: LOREM },
-    { id: 'car1-body',   name: 'Badan Gerbong 1',  text: LOREM },
-    { id: 'car2-body',   name: 'Badan Gerbong 2',  text: LOREM },
-    { id: 'loco-wheels', name: 'Roda Lokomotif',   text: LOREM },
-    { id: 'car1-wheels', name: 'Roda Gerbong 1',   text: LOREM },
-    { id: 'car2-wheels', name: 'Roda Gerbong 2',   text: LOREM },
+    { id: 'loco-roof', name: 'Atap Lokomotif', division: 'Finance',
+      messages: [
+        { author: 'Rechi', text: 'Happy Birthday Pak Bram! Semoga panjang umur, sehat selalu, serta dalam keberkahan.' },
+        { author: 'Claudia', text: 'Semoga sukses di setiap langkah serta setiap harapannya.' },
+        { author: 'Angely', text: 'Terus menginspirasi, menyebarkan ilmu dan kebaikan untuk semua.' },
+      ],
+      closing: 'Happy your day, pak Bram! 🎉' },
+
+    { id: 'car1-roof', name: 'Atap Gerbong 1', division: 'Material Curriculum',
+      messages: [
+        { author: 'Asrida', text: 'Selamat ulang tahun, Bapak. Kiranya Tuhan senantiasa merajut setiap musim kehidupan dengan kasih karunia, menuntun setiap langkah dengan hikmat-Nya, dan menjadikan hidup Bapak berkat yang tak lekang oleh waktu.' },
+        { author: 'Yoani', text: 'Selamat ulang tahun, Bapak. Semoga selalu diberikan kesehatan, umur panjang, kebahagiaan, dan hati yang penuh sukacita. Sukses dan bahagia selalu, Pak.' },
+        { author: 'Joni', text: 'selamat ulang tahun pak Bram, panjang umur dan sehat selalu' },
+        { author: 'John', text: 'Selamat ulang tahun, Bapak. Semoga selalu diberikan kesehatan, umur panjang, kebahagiaan, dan hati yang penuh sukacita. Sukses dan bahagia selalu' },
+      ] },
+
+    { id: 'car2-roof', name: 'Atap Gerbong 2', division: 'Formal Education', tagline: 'Kebijaksanaan',
+      messages: [
+        { author: 'Ekklesia', text: 'Selamat ulang tahun Bapak ATH, semoga panjang umur, sehat selalu, ditambahkan hikmat dan kebijaksanaannya dalam memimpin Gasing Academy untuk lebih maju lagi. Tuhan memberkati selalu.' },
+        { author: 'Hana', text: 'Semoga menjadi inspirasi untuk kemajuan Gasing Academy' },
+        { author: 'Fera', text: 'Semoga senantiasa diberikan kebijaksanaan dan kekuatan untuk terus memimpin serta membawa Gasing Academy semakin berkembang dan memberikan dampak positif bagi banyak generasi.' },
+        { author: 'Julfikri', text: 'Semoga di hari yang berbahagia ini, Bapak senantiasa diberikan kesehatan, kelancaran dalam setiap langkah, serta kesuksesan dan keberkahan selalu menyertai Bapak dalam memimpin dan berkarya.' },
+        { author: 'Mega', text: 'Semoga sehat selalu, panjang umur dan memimpin Gasing menjadi lebih baik lagi.' },
+      ] },
+
+    { id: 'loco-body', name: 'Badan Lokomotif', division: 'Advance', tagline: 'PILAR',
+      messages: [
+        { author: 'Maya', text: 'Happy Birthday, Pak Bram! May God continue to bless you with wisdom and grace, and may your presence continue to inspire and strengthen those around you.' },
+        { author: 'Ajeng', text: 'Terima kasih telah menjadi sosok yang tidak hanya menguatkan tim melalui kepemimpinan, tetapi juga menjadi tempat kami belajar, bertumbuh, dan menemukan arah dalam setiap perjalanan. Semoga Pak Bram senantiasa diberikan kesehatan dan kekuatan untuk terus menjadi pilar yang membawa banyak kebijaksanaan bagi orang-orang di sekitarnya.' },
+        { author: 'Indra', text: 'Selamat ulang tahun, Pak Bram. Semoga senantiasa diberikan kesehatan, kebahagiaan, umur panjang, serta kesuksesan dan kelancaran dalam setiap langkah dan tanggung jawab. 🙏' },
+      ] },
+
+    { id: 'car1-body', name: 'Badan Gerbong 1', division: 'Material Product', tagline: 'Transformatif',
+      messages: [
+        { author: 'Gina', text: 'Selamat ulang tahun, Pak Bram! Sehat dan bahagia selalu, diberkahi setiap langkahnya, dilancarkan seluruh niat baiknya..' },
+        { author: 'Icha', text: 'SELAMAT BERTAMBAH USIA PAK! Semoga diberkahi usia, rezeki dan setiap perjalanannya!!' },
+        { author: 'Muti', text: 'Selamat bertambah usia, Pak Bram! Semoga selalu dikelilingi hal-hal baik, diberikan kesehatan, dan semakin sukses dalam setiap perjalanan, Pak!' },
+        { author: 'Arina', text: 'Selamat ulang tahun, Pak! Semoga selalu diberikan kesehatan, kebahagiaan, dan kesuksesan dalam setiap langkahnya!' },
+        { author: 'Pak Isa', text: 'Selamat Ulang Tahun untuk pa Bram. Di berkahi usianya sepanjang hari dan selalu di beri rejeki, kesehatan. Stay cool & humble... Bahagia dunia dan akhirat' },
+      ] },
+
+    { id: 'car2-body', name: 'Badan Gerbong 2', division: 'DGE', tagline: 'Excelsior!',
+      messages: [
+        { author: 'Nana', text: 'Selamat Ulang Tahun, Pak Bram! Semoga Pak Bram selalu diberikan kesehatan, kebahagiaan, dan semangat luar biasa untuk terus memimpin GASING Academy mewujudkan visi besarnya!' },
+        { author: 'Billy', text: 'Selamat ulang tahun ke 37 Pak Bram, semoga diberi kesehatan dan terus menginspirasi banyak orang didalam dan diluar Gasing. God Bless.' },
+        { author: 'Ibnu', text: 'Selamat ulang tahun ke-37, Pak Bram! Semoga selalu diberikan kesehatan, kesuksesan, dan semangat untuk terus membawa Gasing Academy menuju pencapaian yang lebih besar.' },
+        { author: 'Oka', text: 'Selamat ulang tahun Pak Bram yang ke 37, semoga di tahun yang baru dan selanjutnya dapat menghasilkan karya yang menginspirasi.' },
+      ] },
+
+    { id: 'loco-wheels', name: 'Roda Lokomotif', division: 'Operasional',
+      messages: [
+        { author: 'Valen', text: 'happy birthday Pak Bram, semoga panjang umur, sehat selalu dan semakin sukses dalam memajukan Gasing di seluruh Indonesia bahkan mancanegara ✈️✈️.' },
+        { author: 'Ridho', text: 'Selamat ulang tahun, Pak! Semoga sehat selalu, panjang umur, dan semakin sukses dalam segala hal. Semoga apa yang sedang diperjuangkan bisa berjalan lancar dan membawa banyak hal baik. Terima kasih atas arahan dan kepercayaannya selama ini. All the best, Pak! 🙏' },
+        { author: 'Vefy', text: 'Semoga bertambahnya usia, Pak Bram diberikan kesehatan, panjang umur, semakin terdepan (kaya slogan Yamaha) dan terus menjadi panutan bagi seluruh tim GASING.' },
+        { author: 'Safira', text: 'Happy Birthday, Pak bos. Semoga di usia yang baru ini kariernya makin melesat kayak mobil F1. Sehat selalu, makin bijaksana jadi Team Principal kita semua!!' },
+        { author: 'Nia', text: 'Selamat ulang tahun, Pak! Semoga usia baru membawa lebih banyak kebahagiaan, kesehatan, dan kesuksesan, serta terus menjadi sosok pemimpin membawa perusahaan bertumbuh, juga menginspirasi karyawannya untuk ikut hebat bersama! 🎉🥳😂🎂🥳' },
+      ] },
+
+    { id: 'car1-wheels', name: 'Roda Gerbong 1', division: 'Sosmed', tagline: 'Inspiring',
+      messages: [
+        { author: 'Clara', text: 'Selamat ulang tahun yang ke 37, Pak Bram! Semoga dengan bertambahnya usia, Bapak dilimpahi lebih banyak berkat, rejeki, kesuksesan, kebijaksanaan, kesehatan, dan umur yang panjang. Semoga semua urusan diperlancar dan dipermudah serta semua tujuan yang ditempuh bisa menjadi berkat bagi banyak orang. God bless always, Pak!' },
+      ],
+      closing: 'P.S: Umur Bapak sekarang adalah salah satu Pasangan 10 :D' },
+
+    { id: 'car2-wheels', name: 'Roda Gerbong 2', division: 'HR', tagline: 'Stewardship',
+      messages: [
+        { author: 'Melisa', text: 'Selamat ulang tahun, Pak Bram.. Semoga selalu sehat, bahagia, dan dimudahkan dalam setiap langkah, terima kasih atas kepercayaan dan bimbingan yang Bapak berikan kepada saya selama ini, semoga di usia yang baru ini, semakin banyak hal baik dan momen bahagia bersama keluarga, GBU' },
+        { author: 'Fey', text: 'Happy Birthday Pak Bram! Terima kasih telah menjadi leader yang luar biasa! Kiranya bahagia selalu, memiliki hati yang luas, memiliki jiwa pemimpin yang selalu tangguh & melayani, God Bless Pak - Mazmur 78:72' },
+      ] },
   ],
 
   // Path aset. Ganti file di folder /assets dengan nama yang sama
@@ -118,6 +169,7 @@ export const CONFIG = {
 
     s5_bg3d: 'assets/scene5/bg-3d.jpg', // background scene 3D (opsional)
     train_logo: 'assets/train/virgin-logo.png', // logo di sisi lokomotif (PNG transparan; diubah jadi putih di kode)
+    train_loco_side: 'assets/train/loco-side.webp', // gambar livery sisi lokomotif (tampak samping, hidung di kanan); kalau gagal dimuat → livery prosedural di kode
 
     s11_bg: 'assets/scene11/bg-toko-antik.jpg',
 
