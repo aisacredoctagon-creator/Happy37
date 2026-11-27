@@ -1,14 +1,14 @@
 import { gsap } from 'gsap';
 import { CONFIG } from './config.js';
 import { SCENES_2D } from './scenes2d.js';
-import { h } from './assets.js';
-import { createGasing3D } from './gasing3d.js';
+import { h, mediaExists } from './assets.js';
+import { mountScene0 } from './scene0.js';
 import { createDebugPanel } from './debug.js';
 import { audio } from './audio.js';
 import { createAudioIndicator } from './audio-indicator.js';
 
 const TITLES = {
-  1: 'Tiket', 2: 'Di Kereta', 3: 'Surabaya', 4: 'Toko Antik',
+  0: 'Pembuka', 1: 'Tiket', 2: 'Di Kereta', 3: 'Surabaya', 4: 'Toko Antik',
   5: 'Gembok Koper', 6: 'Isi Koper', 7: 'Bagian Kereta', 8: 'Catatan',
   9: 'Kereta Jadi', 10: 'Tutup Koper', 11: 'Bola Tenis', 12: 'Kejutan',
 };
@@ -25,16 +25,11 @@ const el = {
   mute: $('muteBtn'), error: $('error'),
 };
 
-/* ---------------- HUD ---------------- */
-el.startTitle.textContent = CONFIG.recipient;
-const startGasing = createGasing3D({ className: 'start-gasing', label: 'Karakter Gasing' });
-$('startGasing').replaceWith(startGasing);
-// Layar awal: Gasing melambai halus, lalu mengulang tiap ±8 detik sampai "Mulai" ditekan (timer di-kill di begin())
-let waveCall = null;
-const wave = () => { startGasing.gesture?.('wave'); waveCall = gsap.delayedCall(8, wave); };
-waveCall = gsap.delayedCall(1.0, wave);
+/* ---------------- Scene 0 (halaman pembuka) ---------------- */
+el.startTitle.textContent = `Sebuah perjalanan kecil untuk ${CONFIG.recipient}`;
+const scene0 = mountScene0(el.start, el.startBtn);
 
-let stage = 0;      // scene yang sedang ditampilkan (1–12), ikut berubah saat alur 3D maju sendiri
+let stage = 0;      // scene yang sedang ditampilkan (0 = pembuka, 1–12), ikut berubah saat alur 3D maju sendiri
 let debugPanel = null;
 
 function setStage(n) {
@@ -294,6 +289,41 @@ el.mute.addEventListener('click', () => {
   el.mute.classList.toggle('is-muted', audio.isMuted());
 });
 
+/* ---------------- Layar penuh ---------------- */
+// Tombol ⛶ di pojok kanan atas (juga tombol F). Disembunyikan kalau browser tak mendukung (mis. iPhone Safari).
+{
+  const fsBtn = $('fsBtn'), root = document.documentElement;
+  const request = root.requestFullscreen ?? root.webkitRequestFullscreen;
+  const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
+  const isFs = () => !!(document.fullscreenElement ?? document.webkitFullscreenElement);
+  if (fsBtn && request && document.fullscreenEnabled !== false) {
+    fsBtn.hidden = false;
+    const toggle = () => { try { (isFs() ? exit.call(document) : request.call(root))?.catch?.(() => {}); } catch { /* diabaikan */ } };
+    const sync = () => {
+      fsBtn.classList.toggle('is-on', isFs());
+      fsBtn.textContent = isFs() ? '✕' : '⛶';
+      fsBtn.setAttribute('aria-label', isFs() ? 'Keluar layar penuh' : 'Layar penuh');
+    };
+    // Situs ini hanya untuk mode mendatar: di layar sentuh, begitu masuk layar penuh kunci orientasi ke landscape
+    // (Android Chrome; iPhone Safari tidak mendukung → di sana penjaga orientasi (.rotate-guard) yang menutup layar potret)
+    const lockLandscape = () => {
+      if (!matchMedia('(pointer: coarse)').matches) return;
+      if (isFs()) screen.orientation?.lock?.('landscape')?.catch?.(() => {});
+      else screen.orientation?.unlock?.();
+    };
+    fsBtn.addEventListener('click', toggle);
+    document.addEventListener('fullscreenchange', () => { sync(); lockLandscape(); });
+    document.addEventListener('webkitfullscreenchange', () => { sync(); lockLandscape(); });
+    // di HP: tombol "Mulai Perjalanan" sekaligus masuk layar penuh + kunci landscape (butuh sentuhan pengguna)
+    if (matchMedia('(pointer: coarse)').matches) {
+      $('startBtn')?.addEventListener('click', () => { if (!isFs()) toggle(); });
+    }
+    addEventListener('keydown', (e) => {
+      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) toggle();
+    });
+  }
+}
+
 /* ---------------- Jeda otomatis saat tab / aplikasi tidak aktif ---------------- */
 // Semua <video>/<audio> (termasuk yang tidak ada di DOM, mis. video TV 3D) didaftarkan saat play(),
 // lalu dijeda saat tab disembunyikan dan dilanjutkan saat kembali. Loop render 3D punya jeda sendiri (world3d.js).
@@ -317,14 +347,24 @@ const params = new URLSearchParams(location.search);
 const startScene = Math.min(TOTAL, Math.max(1, parseInt(params.get('scene') ?? '1', 10) || 1));
 
 let started = false;
+// Dunia 3D dimuat saat scene 0 sudah diam (Gasing sudah turun, tombol tampil), bukan saat tombol diklik
+const preloadWorld = () => getWorld().catch((err) => console.warn('3D preload gagal:', err));
+let preloadTimer = setTimeout(preloadWorld, 20000);   // cadangan kalau intro tak pernah selesai
+scene0.introDone.then(() => {
+  if (started) return;
+  clearTimeout(preloadTimer);
+  preloadTimer = setTimeout(() => ('requestIdleCallback' in window ? requestIdleCallback(preloadWorld, { timeout: 2000 }) : preloadWorld()), 1200);
+});
 async function begin(n) {
   if (started) return;
   started = true;
-  audio.unlock().then(() => audio.sfx('btn_press'));   // klik tombol "Mulai Perjalanan"   // harus di dalam gestur (klik Mulai / panel debug): aturan autoplay iOS
-  waveCall?.kill(); waveCall = null;
+  audio.unlock().then(() => audio.sfx('btn_press'));   // klik "Mulai Perjalanan"; harus di dalam gestur (aturan autoplay iOS)
   el.startBtn.disabled = true;
-  getWorld().catch((err) => console.warn('3D preload gagal:', err)); // preload selama scene 2D
-  gsap.to(el.start, { opacity: 0, duration: 0.5, onComplete: () => el.start.remove() });
+  clearTimeout(preloadTimer);   // jangan memuat dunia 3D saat Gasing sedang berjalan masuk: main thread terkunci ±0,7 dtk → animasi macet
+  const entering = scene0.enter();   // Gasing berbalik & berjalan masuk stasiun
+  await entering;
+  preloadWorld();   // kalau belum termuat saat scene 0 diam, muat sekarang (selama scene 2D)
+  gsap.to(el.start, { opacity: 0, duration: 0.5, onComplete: () => { scene0.destroy(); el.start.remove(); } });
   goTo(n);
 }
 el.startBtn.addEventListener('click', () => begin(startScene));
@@ -334,10 +374,17 @@ if (params.has('debug')) {
   gsap.ticker.lagSmoothing(0); // animasi tetap normal di tab latar
 
   const debugJump = (n, { force = false } = {}) => {
-    n = Math.min(TOTAL, Math.max(1, n));
+    n = Math.min(TOTAL, Math.max(0, n));
+    const url = new URL(location.href);
+    if (n === 0) {
+      // scene 0 = halaman pembuka: hanya ada sebelum perjalanan dimulai → muat ulang tanpa ?scene
+      if (!started && !force) return;
+      url.searchParams.delete('scene');
+      location.href = url;
+      return;
+    }
     if (!started) return begin(n);
     if (n === stage && !force) return;
-    const url = new URL(location.href);
     url.searchParams.set('scene', n);          // reload tetap di scene ini
     history.replaceState(null, '', url);
     goTo(n, { force: true });
@@ -352,6 +399,3 @@ if (params.has('debug')) {
   createAudioIndicator({ getScene: () => stage, titles: TITLES });   // nama file audio aktif (hanya ?debug)
   window.__debug = { jump: debugJump, get scene() { return stage; } };
 }
-
-gsap.from('.start > *', { y: 24, opacity: 0, duration: 0.7, stagger: 0.1, ease: 'power2.out' });
-gsap.to('.start-gasing', { rotate: 6, y: -8, duration: 1.4, yoyo: true, repeat: -1, ease: 'sine.inOut' });

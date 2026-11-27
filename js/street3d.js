@@ -19,12 +19,13 @@ import { createGasing3D, GESTURE_TIMING } from './gasing3d.js';
 import { buildSotoServer } from './server3d.js';
 import { CONFIG } from './config.js';
 import { sfx } from './audio.js';
-import { rng, std, box, put, mesh, canvasTex, markerTexture, dotTexture } from './shop3d.js';
+import { rng, std, box, put, mesh, canvasTex, dotTexture } from './shop3d.js';
 
 const DEG = Math.PI / 180;
 const WALL_Z = -3.6;                       // muka bangunan
 const CURB_Z = 3.4;                        // tepi trotoar
-const CART = new THREE.Vector3(-0.6, 0, 0.3);
+const CART_SHIFT = 1.8;                    // gerobak digeser ke kanan supaya lebih terlihat (tidak tertutup Baso Booth)
+const CART = new THREE.Vector3(-0.6 + CART_SHIFT, 0, 0.3);
 const SHOP = { x: 4.9, w: 5.4, h: 5.2, d: 4.5 };
 const DOOR = new THREE.Vector3(SHOP.x, 0.06, WALL_Z + 0.95);   // berdiri di teras
 const PORCH_H = 0.06;
@@ -32,10 +33,10 @@ const PORCH_H = 0.06;
 // Gasing (elemen DOM) berjalan di trotoar
 const ACTOR_H = 1.55, ACTOR_FOOT = 0.1;
 const START = { x: -9.8, z: 2.7 };
-const STAND = { x: -3.5, z: 1.95 };        // menunggu di sini sebelum gerobak diketuk
+const STAND = { x: -3.5 + CART_SHIFT, z: 1.95 };        // menunggu di sini sebelum gerobak diketuk
+const EAT_AT = { x: -0.45 + CART_SHIFT, z: 2.35 };        // berdiri tepat di depan gerobak (di depan bangku) saat makan
 const EAT_TEXTS = ['Nyam...nyam...nyam...', 'Sotonya lezat sekali! mmm!'];   // dua gelembung pikiran berurutan saat makan soto
-const EAT_HOPS = 9;                      // lama makan soto: jumlah loncatan senang (×0,8 dtk) sebelum scene lanjut. 4 = ±1 suapan, 9 = ±3 suapan
-const EAT_AT = { x: -2.1, z: 1.5 };        // berdiri di depan gerobak saat makan
+const EAT_HOPS = 4;   // lama makan soto: jumlah loncatan senang (×0,8 dtk). 4 = durasi dari branch teman; gelembung ke-2 muncul di pertengahan
 
 // Penjual soto: '3d' = model toon (server3d.js); '2d' = gambar assets/scene3/penjual-soto.png sebagai sprite
 const SERVER_STYLE = '3d';
@@ -45,7 +46,7 @@ const VIEWS = {
   // po = seberapa jauh titik pandang diturunkan (pecahan h) supaya objek naik di layar & caption di bawah tidak menutupi
   intro: { t: [0.8, 2.4, -1.0], dir: [-0.38, 0.42, 1], w: 19, h: 8.4, p: { t: [-2.0, 2.2, -0.5], w: 9.5, h: 7.5, po: 0.04 } },
   wide: { t: [1.2, 2.3, -0.8], dir: [-0.14, 0.1, 1], w: 15.5, h: 7.4, p: { t: [-1.7, 2.5, 0.2], w: 6.6, h: 6.0, po: 0.02 } },
-  cart: { t: [-1.5, 1.3, 0.7], dir: [-0.1, 0.09, 1], w: 6.4, h: 3.6, p: { t: [-1.4, 1.7, 0.7], w: 4.8, h: 4.2, po: 0.02 } },
+  cart: { t: [-1.2 + CART_SHIFT, 1.3, 0.9], dir: [-0.1, 0.09, 1], w: 6.4, h: 3.6, p: { t: [-0.9 + CART_SHIFT, 1.7, 0.9], w: 5.2, h: 4.2, po: 0.02 } },
   after: { t: [1.9, 2.4, -0.8], dir: [-0.1, 0.1, 1], w: 14.2, h: 7.2, p: { t: [3.4, 2.5, -0.6], w: 7.4, h: 6.4, po: 0.02 } },
   shop: { t: [SHOP.x, 2.3, -2.6], dir: [-0.06, 0.08, 1], w: 7.4, h: 5.6, p: { w: 6.2, h: 5.6, po: 0.02 } },
   door: { t: [SHOP.x, 1.5, -3.0], dir: [0, 0.05, 1], w: 3.6, h: 2.7, p: { w: 3.4, h: 3.2, po: 0.02 } },
@@ -1015,7 +1016,6 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
   const doorMat = new THREE.MeshBasicMaterial({ map: interiorTexture() });
   const doorLight = new THREE.PointLight(0xffc477, 8, 9, 2);
   doorLight.position.set(0, 1.9, 1.0);
-  const shopMarkerY = 1.7;                 // melayang di depan pintu, di bawah kanopi (tidak menutupi papan nama)
   {
     const { w: W, h: H, d: D } = SHOP;
     const wood = std(0x4a2a17, { roughness: 0.55 });
@@ -1107,16 +1107,20 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
 
   /* ---------------- Penjual soto di balik gerobak ---------------- */
   let serverHop = () => {};
+  let serverServe = (onReach) => { onReach?.(); return Promise.resolve(); };   // menyodorkan mangkuk soto (hanya versi 3D)
+  let serverReset = () => {};
   if (SERVER_STYLE === '3d') {
-    // model 3D toon (server3d.js), berdiri di belakang gerobak, sedikit menoleh ke pembeli di kiri
+    // model 3D toon (server3d.js), berdiri di tanah di sisi KIRI gerobak (Gasing makan di depan gerobak), menoleh ke arah Gasing
     const srv = buildSotoServer();
     srv.group.scale.setScalar(0.78);
-    srv.group.position.set(CART.x + 0.02, 1.36, CART.z - 0.82);
-    srv.group.rotation.y = -0.14;
+    // ujung kerucut model ada di y ≈ -0.655 (satuan model) → ×0.78 ≈ 0.51, supaya menapak di tanah (y = 0)
+    srv.group.position.set(CART.x - 2.2, 0.53, CART.z + 0.7);
+    srv.group.rotation.y = 0.2;
     scene.add(srv.group);
     anim.push(srv.update);
     serverHop = srv.hop;
-  } else {
+    serverServe = srv.serve;
+    serverReset = srv.resetServe;  } else {
     // versi gambar 2D (disimpan, tidak aktif): sprite yang selalu menghadap kamera
     const SERVER_H = 1.2, SERVER_W = SERVER_H * 950 / 800;
     const serverTex = new THREE.TextureLoader().load('assets/scene3/penjual-soto.png');
@@ -1141,7 +1145,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     tr.position.set(x, 0, z);
     scene.add(tr);
   }
-  for (const x of [-7.4, 8.6, 16, -16]) {
+  for (const x of [-5.6, 6.8, 16, -16]) {
     const lp = buildStreetLamp();
     lp.position.set(x, 0, CURB_Z - 0.35);
     lp.rotation.y = x < 0 ? 0 : Math.PI;
@@ -1211,17 +1215,6 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
   }
 
   /* ---------------- Penanda "ketuk di sini" + cincin di tanah ---------------- */
-  const markerTex = markerTexture();
-  const mkMarker = (x, y, z) => {
-    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: markerTex, transparent: true, depthTest: false, depthWrite: false, opacity: 0 }));
-    m.scale.set(0.55, 0.55, 1);
-    m.position.set(x, y, z);
-    m.renderOrder = 20;
-    scene.add(m);
-    return m;
-  };
-  const cartMarker = mkMarker(CART.x, 3.35, CART.z + 0.1);
-  const shopMarker = mkMarker(SHOP.x, shopMarkerY, WALL_Z + 2.1);
   const ringTex = canvasTex(256, 256, (g) => {
     g.shadowColor = '#ffcf6b'; g.shadowBlur = 22;
     g.strokeStyle = '#ffd98a'; g.lineWidth = 12;
@@ -1480,11 +1473,11 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     runId++;
     camTween?.kill(); camTween = null;
     walkTween?.kill(); walkTween = null;
-    gsap.killTweensOf([A, fx, cartM, shopM, cart.steam, cartRing.material, shopRing.material, cartMarker.material, shopMarker.material]);
+    gsap.killTweensOf([A, fx, cartM, shopM, cart.steam, cartRing.material, shopRing.material]);
     killActor();
     fx.door = 0; applyFx();
     cart.steam.k = 1;
-    cartMarker.material.opacity = 0; shopMarker.material.opacity = 0;
+    serverReset();
     cartRing.material.opacity = 0; shopRing.material.opacity = 0;
     A.fade = 1; A.bubble = 0; A.text = 0; A.walking = false;
     state = 'off';
@@ -1530,19 +1523,25 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     await cam;
     if (my !== runId) return;
 
-    setBubbleText(EAT_TEXTS[0]);
-    A.text = 0;
-    gsap.fromTo(A, { bubble: 0 }, { bubble: 1, duration: 0.3, ease: 'power1.out' });
-    gsap.to(A, { text: 1, duration: 0.25, delay: 0.3, ease: 'power1.out' });   // teks muncul setelah bubble selesai
-    serverHop();                       // penjual ikut senang menyajikan soto
-    actor?.setState?.('eat');          // tas diletakkan, tangan memegang mangkuk & sendok
-    await sleep(1.4);                  // beri waktu: letakkan tas → angkat mangkuk → suapan pertama
+    // penjual menyodorkan semangkuk soto; begitu tangannya sampai, Gasing mulai "makan" (animasi Gasing tidak diubah)
+    const served = serverServe(() => {
+      if (my !== runId) return;
+      setBubbleText(EAT_TEXTS[0]);
+      A.text = 0;
+      gsap.fromTo(A, { bubble: 0 }, { bubble: 1, duration: 0.3, ease: 'power1.out' });
+      gsap.to(A, { text: 1, duration: 0.25, delay: 0.3, ease: 'power1.out' });   // teks muncul setelah bubble selesai
+      actor?.setState?.('eat');        // tas diletakkan, tangan memegang mangkuk & sendok
+    });
+    await served;                      // mangkuk dilepas penjual (Gasing sudah memegang mangkuknya sendiri)
+    if (my !== runId) return;
+    serverHop();                       // penjual ikut senang
+    await sleep(0.7);                  // beri waktu: letakkan tas → angkat mangkuk → suapan pertama
     if (my !== runId) return;
     for (let i = 0; i < EAT_HOPS; i++) {   // ±0,8 dtk per loncatan; siklus suapan 2,6 dtk → scene baru berakhir setelah suapan ke-3
       actor?.hop();
       await sleep(0.8);
       if (my !== runId) return;
-      if (i === 3) {                     // pertengahan makan: gelembung pertama → kedua
+      if (i === (EAT_HOPS >> 1) - 1) {   // pertengahan makan: gelembung pertama → kedua
         gsap.to(A, { bubble: 0, duration: 0.2 });
         await sleep(0.3);
         if (my !== runId) return;
@@ -1589,7 +1588,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   let down = null;
-  const targets = () => (state === 'cart' ? [cartHit, cartMarker] : state === 'shop' ? [shopHit, shopMarker] : []);
+  const targets = () => (state === 'cart' ? [cartHit] : state === 'shop' ? [shopHit] : []);
   const interactive = () => state === 'cart' || state === 'shop' || state === 'intro';
   function pickTarget(e) {
     const list = targets();
@@ -1640,12 +1639,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     placeActor(t);
 
     const pulse = 0.5 + Math.sin(t * 3) * 0.5;
-    const bob = Math.sin(t * 2.4) * 0.07;
-    cartMarker.position.y = 3.35 + bob; shopMarker.position.y = shopMarkerY + bob;
     const hs = hoverTarget ? 0.07 : 0;
-    cartMarker.material.opacity = cartM.o; shopMarker.material.opacity = shopM.o;
-    const sc = 0.55 + pulse * 0.04 + hs;
-    cartMarker.scale.set(sc, sc, 1); shopMarker.scale.set(sc * 1.6, sc * 1.6, 1);   // toko lebih jauh → penanda dibuat lebih besar
     cartRing.material.opacity = cartM.o * (0.35 + pulse * 0.4 + hs * 3);
     shopRing.material.opacity = shopM.o * (0.35 + pulse * 0.4 + hs * 3);
     const rs = 1 + pulse * 0.05;

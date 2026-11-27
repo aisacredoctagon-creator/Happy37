@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/characters/gasing.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;800&family=Source+Sans+3:wght@600;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
   <script type="importmap">
     {
@@ -24,6 +24,8 @@
   <div id="app">
     <canvas id="gl" aria-label="Scene 3D koper"></canvas>
     <main id="stage2d"></main>
+
+    <button class="icon-btn fs-btn" id="fsBtn" hidden aria-label="Layar penuh" title="Layar penuh (F)">⛶</button>
 
     <header class="hud-top">
       <button class="icon-btn" id="muteBtn" hidden aria-label="Musik">♪</button>
@@ -55,13 +57,19 @@
     <div id="fader" aria-hidden="true"></div>
     <div id="confetti" aria-hidden="true"></div>
 
-    <section class="start" id="start">
-      <div class="start-gasing" id="startGasing"></div>
-      <p class="start-kicker">Sebuah perjalanan kecil untuk</p>
-      <h1 class="start-title" id="startTitle"></h1>
-      <button class="btn btn-big" id="startBtn">Mulai Perjalanan →</button>
+    <!-- Scene 0: halaman pembuka (panggung stasiun dibangun js/scene0.js) -->
+    <section class="start s0" id="start" aria-labelledby="startTitle">
+      <h1 class="sr-only" id="startTitle">Sebuah perjalanan kecil untuk Pak Bram</h1>
+      <button class="btn" id="startBtn">Mulai Perjalanan →</button>
       <p class="start-tip">Nyalakan suara 🔊 · bisa di HP maupun laptop</p>
     </section>
+
+    <!-- Hanya tampil di HP/tablet saat posisi potret: situs ini harus dilihat mendatar -->
+    <div class="rotate-guard" id="rotateGuard" role="alert" aria-live="assertive">
+      <div class="rotate-icon" aria-hidden="true">📱</div>
+      <p>Putar HP kamu ke mode <b>mendatar</b> (landscape) ya</p>
+      <small>Matikan kunci rotasi layar kalau tidak mau berputar</small>
+    </div>
 
     <div class="error" id="error" hidden></div>
   </div>

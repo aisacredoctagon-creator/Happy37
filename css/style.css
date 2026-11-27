@@ -110,6 +110,28 @@ button { font: inherit; color: inherit; cursor: pointer; }
   backdrop-filter: blur(6px);
   pointer-events: auto;
 }
+.fs-btn {
+  position: fixed; top: calc(12px + var(--safe-t)); right: 16px; z-index: 65;
+  font-size: 22px; line-height: 1; cursor: pointer;
+}
+/* Penjaga orientasi: layar sentuh (HP/tablet) dalam posisi potret → tutup semuanya dengan ajakan memutar layar */
+.rotate-guard {
+  display: none;
+  position: fixed; inset: 0; z-index: 200;
+  flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 24px; text-align: center;
+  background: #1b130e; color: var(--cream, #f6efe2);
+  font-family: var(--font-display, inherit); font-size: 20px; line-height: 1.4;
+}
+.rotate-guard p { margin: 0; }
+.rotate-guard small { font-size: 14px; opacity: .7; font-family: inherit; }
+.rotate-icon { font-size: 72px; animation: rotate-hint 2.2s ease-in-out infinite; }
+@keyframes rotate-hint { 0%, 25% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+@media (orientation: portrait) and (pointer: coarse) { .rotate-guard { display: flex; } }
+@media (prefers-reduced-motion: reduce) { .rotate-icon { animation: none; } }
+
+.fs-btn.is-on { background: rgba(240, 180, 41, .85); color: #1b130e; }
+.hud-top { padding-right: 72px; }
 .icon-btn.is-muted { opacity: .45; text-decoration: line-through; }
 
 /* ---------------- HUD ---------------- */
@@ -227,25 +249,109 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 20px 24px; border-radius: 16px;
 }
 
-/* ---------------- Start ---------------- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---------------- Scene 0: halaman pembuka (js/scene0.js) ---------------- */
+/* Panggung 1779×891 (frame Figma) dipotong "cover". Area fokus = Gasing di depan pintu s/d papan nama + tombol
+   (x ≈ 40%–80% lebar panggung) selalu masuk layar penuh. Layar potret: panggung diperkecil & menempel ke bawah,
+   sisa atas diisi warna langit. */
 .start {
   position: fixed; inset: 0; z-index: 60;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; padding: 24px;
-  background:
-    radial-gradient(ellipse at 50% 35%, rgba(242, 177, 52, .28), transparent 60%),
-    radial-gradient(ellipse at 50% 120%, rgba(228, 87, 46, .35), transparent 55%),
-    var(--night);
+  container-type: size; overflow: hidden;
+  background: #02a6ff;   /* = warna baris teratas sky.png, supaya tidak ada sambungan di layar potret */
 }
-.start-gasing { width: clamp(150px, 30vmin, 260px); margin-bottom: 18px; }
-.start-kicker { margin: 0; font-size: clamp(15px, 2vw, 19px); opacity: .85; }
-.start-title {
-  font-family: var(--font-display); font-weight: 700;
-  font-size: clamp(46px, 11vw, 104px); line-height: 1;
-  margin: 6px 0 28px; color: var(--mustard);
-  text-shadow: 0 4px 0 var(--tomato-dark);
+.s0-stage {
+  --fl: .22;      /* tepi kiri area fokus (Gasing + tangannya), fraksi lebar panggung */
+  --fr: .98;      /* tepi kanan area fokus (plakat judul + tombol), fraksi lebar panggung */
+  --fm: 3cqw;     /* margin aman dari tepi layar */
+  --w: min(max(100cqw, calc(100cqh * 1298 / 689)), calc((100cqw - 2 * var(--fm)) / (var(--fr) - var(--fl))));
+  --h: calc(var(--w) * 689 / 1298);
+  position: absolute;
+  width: var(--w); height: var(--h);
+  top: clamp(100cqh - var(--h), (100cqh - var(--h)) * .4, 0px);   /* .4: di layar pendek (HP landscape) lebih sedikit terpotong di atas, plakat tetap utuh */
+  /* focus-nya digeser ke dalam layar, tapi panggung tidak boleh meninggalkan celah di kiri/kanan: tepi kiri ∈ [lebar layar − lebar panggung, 0] */
+  left: clamp(100cqw - var(--w), clamp(var(--fm) - var(--fl) * var(--w), (100cqw - var(--w)) * .5, 100cqw - var(--fm) - var(--fr) * var(--w)), 0px);
+  container-type: inline-size;
+  /* Dipotong di kiri/kanan/bawah, tapi TIDAK di atas: langit (y −202…0 dari frame) menyambung ke atas panggung saat layar lebih tinggi
+     dari panggung (layar potret / tablet), sisanya = warna baris teratas langit (latar .start) */
+  overflow: visible;
+  clip-path: inset(-100vh 0 0 0);
 }
-.start-tip { font-size: 14px; opacity: .55; margin-top: 18px; }
+.s0-layer { position: absolute; display: block; max-width: none; user-select: none; pointer-events: none; }
+/* Pohon dicerminkan ke atas tepi panggung (di atas frame Figma), memudar menjauhi tepi → tak ada potongan keras saat layar lebih tinggi dari panggung */
+.s0-flip { transform: scaleY(-1); -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
+.s0-bus > img { display: block; width: 100%; height: 100%; }
+.s0-train, .s0-bus { will-change: transform; }
+.s0-clouds { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.s0-clouds img {
+  position: absolute; left: 0; height: auto; max-width: none; user-select: none;
+  will-change: transform;
+  animation: s0-cloud-drift linear infinite;
+}
+/* 1cqw = 1% lebar panggung: awan masuk dari luar tepi kiri, keluar lewat tepi kanan, lalu mengulang */
+@keyframes s0-cloud-drift {
+  from { transform: translate3d(-22cqw, 0, 0); }
+  to { transform: translate3d(102cqw, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .s0-clouds img { animation-play-state: paused; } }
+/* Gasing berdiri di trotoar, di depan pintu kanan stasiun (x ≈ 905/1779) */
+.s0-gasing { position: absolute; will-change: transform; }   /* posisi/ukuran: style inline dari js/scene0.js (jangan pakai `translate` — GSAP menimpanya) */
+.s0-skyline-x { overflow: hidden; transform: scaleX(-1); }
+.s0-skyline-x > img { display: block; width: 153.55%; height: 100%; max-width: none; }
+/* Plakat + tombol (gambar) di kanan atas, posisi/ukuran dari js/scene0.js. Tombol = <button> berisi gambar pil kuning;
+   saat hover/fokus: membesar sedikit + kilau putih menyapu dari kiri ke kanan (dipotong mengikuti bentuk pil lewat mask gambarnya) */
+.s0-btn {
+  display: block; position: relative;
+  width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  /* tersembunyi dulu; muncul (.is-in) setelah bus selesai menurunkan Gasing */
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: scale .18s ease, opacity .25s ease, filter .18s ease;
+  transform-origin: 50% 50%;
+}
+.s0-btn > img { display: block; width: 100%; height: 100%; pointer-events: none; user-select: none; filter: drop-shadow(0 .5cqw .6cqw rgba(7, 24, 58, .3)); }
+.s0-btn-shine {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  -webkit-mask: var(--btn-img) center / 100% 100% no-repeat;
+  mask: var(--btn-img) center / 100% 100% no-repeat;
+}
+.s0-btn-shine::before {
+  content: ""; position: absolute; top: -20%; bottom: -20%; left: 0; width: 38%;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, .15) 25%, rgba(255, 255, 255, .95) 50%, rgba(255, 255, 255, .15) 75%, transparent 100%);
+  transform: translateX(-130%) skewX(-22deg);
+  opacity: 0;
+}
+.s0-btn.is-in {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  animation: s0-btn-pop .55s cubic-bezier(.34, 1.56, .64, 1) both;
+}
+@keyframes s0-btn-pop {
+  from { opacity: 0; transform: translateY(.9em) scale(.8); }
+  to { opacity: 1; transform: none; }
+}
+/* klik: tombol menghilang, Gasing berjalan masuk stasiun */
+.s0-btn.is-out { opacity: 0; scale: .85; pointer-events: none; animation: none; }
+/* hover/tekan: hanya membesar / mengecil, posisi tetap */
+.s0-btn:hover, .s0-btn:focus-visible { transform: none; scale: 1.06; filter: brightness(1.05) saturate(1.08); }
+.s0-btn:hover .s0-btn-shine::before, .s0-btn:focus-visible .s0-btn-shine::before { animation: s0-shine 1.5s ease-in-out infinite; }
+@keyframes s0-shine {
+  0% { transform: translateX(-130%) skewX(-22deg); opacity: 1; }
+  55%, 100% { transform: translateX(340%) skewX(-22deg); opacity: 1; }
+}
+.s0-btn:active { transform: none; scale: .95; box-shadow: none; }
+.s0-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; border-radius: 999px; }
+@media (prefers-reduced-motion: reduce) { .s0-btn:hover .s0-btn-shine::before, .s0-btn:focus-visible .s0-btn-shine::before { animation: none; } }
+/* Pembungkus tombol: posisi lewat style inline (box dari scene0.js) */
+.s0-btn-anchor { position: absolute; }
+.start-tip {
+  position: absolute; left: 0; right: 0; bottom: calc(10px + var(--safe-b)); margin: 0;
+  text-align: center; font-size: 12px; font-weight: 600;
+  color: #fff; opacity: .85; text-shadow: 0 1px 3px rgba(0, 0, 0, .6);
+  pointer-events: none;
+}
 
 /* ============================================================
    SLOT ASET + PLACEHOLDER
@@ -346,14 +452,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ---------- Scene 1: Tiket ---------- */
 /* Panorama 3:1 dipotong "cover" → fokus awal digeser ke kanan (72%) supaya Monas terlihat,
-   TAPI papan petunjuk (Stasiun Pasarturi / Gambir, x ≈ 28%–53% lebar gambar) dijadikan jangkar:
+   TAPI papan digital peron (Stasiun Pasarturi, x ≈ 23,5%–55,5% lebar gambar) dijadikan jangkar:
    posisi digeser (clamp) sehingga papan selalu masuk layar penuh di resolusi/rasio apa pun.
    Layar yang sangat sempit (potret): panggung diperkecil (maks 3,76× lebar layar) dan menempel ke bawah.
    Langit, awan, dan stasiun berbagi satu kotak (.s1-stage) agar posisinya selalu sejajar. */
 .s1 { container-type: size; background: #3aa8ff; }
 .s1-stage {
-  --sign-l: .28;   /* tepi kiri papan, fraksi lebar gambar */
-  --sign-r: .53;   /* tepi kanan papan */
+  --sign-l: .235;  /* tepi kiri papan, fraksi lebar gambar */
+  --sign-r: .555;  /* tepi kanan papan */
   --sign-m: 3cqw;  /* margin aman dari tepi layar */
   --w: min(max(100cqw, calc(100cqh * 3)), calc((100cqw - 2 * var(--sign-m)) / (var(--sign-r) - var(--sign-l))));
   --h: calc(var(--w) / 3);
@@ -376,9 +482,62 @@ button { font: inherit; color: inherit; cursor: pointer; }
   to { transform: translate3d(104cqw, 0, 0); }
 }
 @media (prefers-reduced-motion: reduce) { .s1-clouds img { animation-play-state: paused; } }
-.s1-gasing { position: absolute; left: 3%; bottom: 4%; height: 64%; }
+
+/* Papan digital peron (LED amber). Kotak = posisi papan di gambar latar 2000×668 (kiri 24,08%, atas 21,98%, lebar 31,15%).
+   Semua ukuran di dalamnya memakai cqw/cqh = 1% lebar/tinggi papan (aset 1354×164), jadi skalanya ikut panggung.
+   .led-msg dibuat sebesar seluruh papan (digeser keluar dari .s1-led) supaya koordinat = piksel aset asli ÷ 13,54. */
+.s1-signage {
+  position: absolute; left: 24.08%; top: 21.98%; width: 31.15%; height: 11.29%;
+  container-type: size; pointer-events: none; user-select: none;
+  --led: #ffb81c; --led-glow: rgba(255, 160, 0, .55);
+}
+.s1-signage-panel { position: absolute; inset: 0; width: 100%; height: 100%; }
+.s1-led {
+  position: absolute; left: 1.03%; right: 1.18%; top: 12.2%; bottom: 17.1%;
+  overflow: hidden;
+  font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-weight: 600; font-size: 5cqw;
+  color: var(--led); text-shadow: 0 0 .7cqw var(--led-glow); line-height: 1;
+}
+.led-msg { position: absolute; left: -1.03cqw; top: -12.2cqh; width: 100cqw; height: 100cqh; white-space: nowrap; }
+.led-msg > * { position: absolute; top: 47.6cqh; translate: 0 -50%; }
+.led-time { left: 3.6cqw; font-size: 5.6cqw; }
+.led-time i { font-style: normal; animation: led-colon 1.4s steps(1) infinite; }
+.led-dest { left: 20.1cqw; }
+.led-bar { left: 63.7cqw; width: .5cqw; height: 38cqh; border-radius: .3cqw; background: var(--led); box-shadow: 0 0 .6cqw var(--led-glow); }
+.led-peron { left: 69.6cqw; }
+.led-badge {
+  left: 83.8cqw; width: 6.1cqw; height: 5.7cqw; display: grid; place-items: center;
+  background: var(--led); color: #1a1200; border-radius: 1.1cqw; font-weight: 800; text-shadow: none;
+  box-shadow: 0 0 .9cqw var(--led-glow);
+}
+.led-arrow { left: 91.5cqw; width: 5.8cqw; height: 5.8cqw; font-size: 0; color: transparent; text-shadow: none;
+  background: var(--led); filter: drop-shadow(0 0 .5cqw var(--led-glow));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 10.2h12.2V4.6L22.4 12l-8.2 7.4v-5.6H2z'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 10.2h12.2V4.6L22.4 12l-8.2 7.4v-5.6H2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: led-arrow 1.2s ease-in-out infinite;
+}
+.led-a { animation: led-a 12.84s ease-in-out infinite; }
+.led-run { left: 0; animation: led-run 12.84s linear infinite; }
+@keyframes led-colon { 50% { opacity: .15; } }
+@keyframes led-arrow { 0%, 100% { translate: 0 -50%; } 50% { translate: 1.3cqw -50%; } }
+/* pesan A (jadwal) naik keluar → teks berjalan B melintas → jeda gelap singkat → A naik masuk dari bawah */
+@keyframes led-a {
+  0%, 11.68% { transform: translateY(0); }
+  15.89% { transform: translateY(-70%); }
+  15.9%, 95.8% { transform: translateY(70%); }
+  100% { transform: translateY(0); }
+}
+@keyframes led-run {
+  0%, 15.89% { transform: translateX(100cqw); }
+  91.59%, 100% { transform: translateX(-100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .led-a, .led-run, .led-arrow, .led-time i { animation: none; }
+  .led-b { display: none; }
+}
+.s1-gasing { position: absolute; left: calc(32cqw - 26.8cqh); bottom: 4%; height: 64%; }   /* pusat badan ≈ 32% lebar layar (lebar elemen = 0,838 × tinggi = 53,6cqh) */
 .s1-ticket-wrap {
-  position: absolute; right: 5%; top: 50%;
+  position: absolute; left: calc(71cqw - min(330px, 25vw)); top: 55%;   /* pusat tiket ≈ 71% lebar layar */
   width: min(660px, 50vw);  /* 50vw: supaya tidak menutupi papan stasiun di layar sempit */
   --tilt-x: 0deg; --tilt-y: 0deg;   /* kemiringan 3D saat hover (diisi JS mengikuti kursor) */
   transform: perspective(900px) translateY(-46%) rotate(-4deg) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
@@ -550,7 +709,46 @@ button { font: inherit; color: inherit; cursor: pointer; }
   80%  { transform: translate(-.5px, .2px) rotate(-.5deg); }
   100% { transform: translate(0, 0) rotate(0deg); }
 }
-@media (prefers-reduced-motion: reduce) { .s2-bottle { animation: none; } }
+/* Air dalam botol: wadah (klip) mengikuti rongga botol; isi air lebih lebar dari wadah lalu diayun supaya permukaannya
+   miring-bergoyang berlawanan dengan getaran botol (efek cipratan di dalam kereta). Ukuran dalam % kotak botol (1058×1940). */
+.s2-bottle-water {
+  /* Dipotong memakai siluet botol itu sendiri (alpha gambar), dikecilkan sedikit supaya garis tepi botol tetap terlihat —
+     jadi air mengikuti lengkung bahu & dasar botol, bukan kotak. */
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  -webkit-mask: url(../assets/scene2/bottle.webp) 49% 98% / 90% 96.5% no-repeat;
+          mask: url(../assets/scene2/bottle.webp) 49% 98% / 90% 96.5% no-repeat;
+}
+.s2-bottle-wave {
+  position: absolute; left: -20%; right: -20%; top: 47.7%; bottom: -20%; transform-origin: 50% 0; will-change: transform;
+  /* makin pekat ke dasar supaya air terlihat penuh dari tengah sampai alas botol */
+  background: linear-gradient(180deg, rgba(48, 160, 235, .62) 0%, rgba(20, 112, 205, .78) 40%, rgba(12, 88, 180, .88) 70%, rgba(10, 80, 172, .95) 100%);
+  animation: s2-water-slosh .62s ease-in-out infinite alternate, s2-water-bob .21s linear infinite;
+  animation-play-state: paused;
+}
+.s2-bottle-wave::before { /* garis permukaan yang terang */
+  content: ''; position: absolute; left: 0; right: 0; top: -1.5%; height: 4%;
+  background: linear-gradient(180deg, rgba(220, 245, 255, .85), rgba(170, 225, 250, .2));
+  border-radius: 50% / 100% 100% 0 0;
+}
+.s2-bubble {
+  position: absolute; bottom: 4.8%; width: 3.4%; aspect-ratio: 1; border-radius: 50%;
+  background: rgba(255, 255, 255, .55); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .5);
+  left: calc(13.5% + var(--x) * .67); opacity: 0; animation: s2-bubble-rise var(--d) ease-in infinite var(--delay);
+  animation-play-state: paused;
+}
+.s2-bubble.is-1 { --x: 38%; --d: 2.4s; --delay: -.2s; }
+.s2-bubble.is-2 { --x: 55%; --d: 3.1s; --delay: -1.4s; width: 2.4%; }
+.s2-bubble.is-3 { --x: 66%; --d: 2.8s; --delay: -2.1s; width: 2.7%; }
+.s2.is-running .s2-bottle-wave, .s2.is-running .s2-bubble { animation-play-state: running; }
+@keyframes s2-water-slosh { from { transform: rotate(-2.6deg); } to { transform: rotate(2.6deg); } }
+@keyframes s2-water-bob { /* permukaan naik-turun halus, selaras irama getar botol */
+  0%, 100% { translate: 0 0; } 25% { translate: 0 -.9%; } 50% { translate: 0 .4%; } 75% { translate: 0 -.6%; }
+}
+@keyframes s2-bubble-rise {
+  0% { bottom: 3.4%; opacity: 0; } 15% { opacity: .8; }
+  85% { opacity: .6; } 100% { bottom: 46%; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .s2-bottle { animation: none; } .s2-bottle-wave, .s2-bubble { animation: none; } }
 
 /* Pegangan tangan (tali + segitiga biru) — potongan terpisah dari gambar interior, digantung di kaitan pada batang.
    Posisi/ukuran dalam % gambar interior (1671×941); transform-origin = titik kaitan di batang (di atas potongan). */
@@ -764,7 +962,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .dbg-btn:hover:not(:disabled), .dbg-cell:hover { background: rgba(246, 239, 226, .2); }
 .dbg-btn:disabled { opacity: .35; cursor: default; }
 .dbg-wide { flex: 1; }
-.dbg-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.dbg-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .dbg-cell { padding: 0; }
 .dbg-cell.is-current { background: var(--mustard); color: var(--ink); border-color: transparent; }
 .dbg-gest { display: none; gap: 4px; max-height: 40vh; overflow: auto; }

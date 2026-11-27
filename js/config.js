@@ -74,10 +74,29 @@ export const CONFIG = {
   assets: {
     gasing: 'assets/characters/gasing.png',
 
+    // Scene 0 (halaman pembuka) — lapisan hasil bedah Figma "Frame 3" (1779×891), lihat js/scene0.js
+    s0: {
+      sky: 'assets/scene0/sky.png',
+      clouds: ['assets/scene0/cloud-1.png', 'assets/scene0/cloud-2.png', 'assets/scene0/cloud-3.png'],
+      treeL: 'assets/scene0/tree-left.png',
+      treeR: 'assets/scene0/tree-right.png',
+      skyline: 'assets/scene0/skyline.png',   // gedung kota + Monas di kanan
+      train: 'assets/scene0/train.png',       // kereta di peron kanan (menghadap kanan)
+      platform: 'assets/scene0/platform-wide.png', // atap peron + pagar putih (di depan kereta)
+      station: 'assets/scene0/station.png',   // gedung Stasiun Gambir
+      treeBush: 'assets/scene0/tree-bush-left.png',
+      street: 'assets/scene0/street.png',     // trotoar + jalan + zebra cross
+      planter: 'assets/scene0/planter.png',   // pot semak kanan
+      plaque: 'assets/scene0/plaque.png',     // plakat biru "Sebuah perjalanan kecil untuk Pak Bram" + pin lokasi
+      button: 'assets/scene0/button.png',     // tombol kuning "Mulai Perjalanan →"
+      bus: 'assets/scene0/bus.png',           // bus yang sesekali lewat (menghadap kiri)
+    },
+
     // Scene 1 berlapis (hasil bedah): langit → awan bergerak pelan → stasiun (PNG/WebP, langit transparan)
     s1_sky: 'assets/scene1/Sky.png',
     s1_clouds: ['assets/scene1/cloud-1.png', 'assets/scene1/cloud-2.png', 'assets/scene1/cloud-3.png'],
-    s1_fg: 'assets/scene1/bg-stasiun4.png',
+    s1_fg: 'assets/scene1/bg-stasiun5.webp',
+    s1_signage: 'assets/scene1/signage-blank.png', // panel papan digital kosong (teks LED dianimasikan lewat HTML/CSS)
     s1_logo: 'assets/scene1/logo-gasing-railways.webp', // logo di kepala tiket (latar putih → di-multiply ke kertas)
 
     s2_parallax: 'assets/scene2/parallax/', // folder sprite parallax Surabaya (hasil bedah dari Figma)

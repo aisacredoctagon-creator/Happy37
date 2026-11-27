@@ -65,10 +65,26 @@ function scene1(ctx) {
       src: A.s1_clouds[i], alt: '', draggable: 'false', decoding: 'async',
       style: `width:${w}%;top:${top}%;animation-duration:${dur}s;animation-delay:${-(dur * at).toFixed(1)}s`,
     })));
+  // Papan digital peron: panel kosong menutupi tulisan yang "terpanggang" di gambar latar, lalu teks LED
+  // dianimasikan murni lewat CSS (pesan A: jadwal → pesan B: teks berjalan → kembali ke A, ±13 dtk per siklus).
+  const signage = h('div', { class: 's1-signage', 'aria-hidden': 'true' },
+    h('img', { class: 's1-signage-panel', src: A.s1_signage, alt: '', draggable: 'false' }),
+    h('div', { class: 's1-led' },
+      h('div', { class: 'led-msg led-a' },
+        h('span', { class: 'led-time' }, '14', h('i', {}, ':'), '29'),
+        h('span', { class: 'led-dest' }, t.to),
+        h('span', { class: 'led-bar' }),
+        h('span', { class: 'led-peron' }, 'Peron'),
+        h('span', { class: 'led-badge' }, '2'),
+        h('span', { class: 'led-arrow' }, '➜')),
+      h('div', { class: 'led-msg led-b' },
+        h('span', { class: 'led-run' },
+          `Selamat datang di ${t.from}   •   ${t.train} segera berangkat`))));
   const stage = h('div', { class: 's1-stage' },
     h('img', { class: 's1-sky', src: A.s1_sky, alt: '', draggable: 'false' }),
     clouds,
-    h('img', { class: 's1-fg', src: A.s1_fg, alt: 'Peron Stasiun Gambir', draggable: 'false' }));
+    h('img', { class: 's1-fg', src: A.s1_fg, alt: 'Peron Stasiun Gambir', draggable: 'false' }),
+    signage);
 
   const g = gasing('Gasing menunggu tiket', 's1-gasing', 0.35, true, S12_BAG_SIDE);   // tas raket di punggung (sama seperti scene lain)
   const el = h('section', { class: 'scene s1' },
@@ -261,7 +277,6 @@ function buildSurabayaParallax() {
 }
 
 function scene2(ctx) {
-  // dibuat per pemanggilan scene2() (bukan di level modul): instance Gasing yang sudah di-dispose tidak dipakai ulang saat scene diulang / dilewati
   const g2 = gasing('Gasing lihat jendela', 's2-gasing', 0.3, true, S12_BAG_SIDE);   // tas raket di punggung (sama seperti scene lain)
   const el = h('section', { class: 'scene s2' },
     h('div', { class: 's2-wall' }),
@@ -280,7 +295,11 @@ function scene2(ctx) {
         h('img', { src: A.s2_poster_wilson, alt: 'Poster Wilson', draggable: 'false', decoding: 'async' })),
       // Botol minum di meja bawah jendela — bergetar halus mengikuti guncangan kereta
       h('div', { class: 's2-bottle' },
-        h('img', { src: A.s2_bottle, alt: 'Botol minum', draggable: 'false', decoding: 'async' }))),
+        h('img', { src: A.s2_bottle, alt: 'Botol minum', draggable: 'false', decoding: 'async' }),
+        // Air di dalam botol — anak dari .s2-bottle, jadi ikut bergetar; permukaannya juga berayun sendiri (slosh)
+        h('div', { class: 's2-bottle-water', 'aria-hidden': 'true' },
+          h('div', { class: 's2-bottle-wave' }),
+          h('i', { class: 's2-bubble is-1' }), h('i', { class: 's2-bubble is-2' }), h('i', { class: 's2-bubble is-3' })))),
     g2);
 
   return {
