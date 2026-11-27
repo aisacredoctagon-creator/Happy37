@@ -52,10 +52,26 @@ function scene1(ctx) {
       src: A.s1_clouds[i], alt: '', draggable: 'false', decoding: 'async',
       style: `width:${w}%;top:${top}%;animation-duration:${dur}s;animation-delay:${-(dur * at).toFixed(1)}s`,
     })));
+  // Papan digital peron: panel kosong menutupi tulisan yang "terpanggang" di gambar latar, lalu teks LED
+  // dianimasikan murni lewat CSS (pesan A: jadwal → pesan B: teks berjalan → kembali ke A, ±13 dtk per siklus).
+  const signage = h('div', { class: 's1-signage', 'aria-hidden': 'true' },
+    h('img', { class: 's1-signage-panel', src: A.s1_signage, alt: '', draggable: 'false' }),
+    h('div', { class: 's1-led' },
+      h('div', { class: 'led-msg led-a' },
+        h('span', { class: 'led-time' }, '14', h('i', {}, ':'), '29'),
+        h('span', { class: 'led-dest' }, t.to),
+        h('span', { class: 'led-bar' }),
+        h('span', { class: 'led-peron' }, 'Peron'),
+        h('span', { class: 'led-badge' }, '2'),
+        h('span', { class: 'led-arrow' }, '➜')),
+      h('div', { class: 'led-msg led-b' },
+        h('span', { class: 'led-run' },
+          `Selamat datang di ${t.from}   •   ${t.train} segera berangkat`))));
   const stage = h('div', { class: 's1-stage' },
     h('img', { class: 's1-sky', src: A.s1_sky, alt: '', draggable: 'false' }),
     clouds,
-    h('img', { class: 's1-fg', src: A.s1_fg, alt: 'Peron Stasiun Gambir', draggable: 'false' }));
+    h('img', { class: 's1-fg', src: A.s1_fg, alt: 'Peron Stasiun Gambir', draggable: 'false' }),
+    signage);
 
   const g = gasing('Gasing menunggu tiket', 's1-gasing', 0.35, true, S12_BAG_SIDE);   // tas raket di punggung (sama seperti scene lain)
   const el = h('section', { class: 'scene s1' },

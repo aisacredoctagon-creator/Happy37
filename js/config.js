@@ -95,7 +95,8 @@ export const CONFIG = {
     // Scene 1 berlapis (hasil bedah): langit → awan bergerak pelan → stasiun (PNG/WebP, langit transparan)
     s1_sky: 'assets/scene1/Sky.png',
     s1_clouds: ['assets/scene1/cloud-1.png', 'assets/scene1/cloud-2.png', 'assets/scene1/cloud-3.png'],
-    s1_fg: 'assets/scene1/bg-stasiun4.png',
+    s1_fg: 'assets/scene1/bg-stasiun5.webp',
+    s1_signage: 'assets/scene1/signage-blank.png', // panel papan digital kosong (teks LED dianimasikan lewat HTML/CSS)
     s1_logo: 'assets/scene1/logo-gasing-railways.webp', // logo di kepala tiket (latar putih → di-multiply ke kertas)
 
     s2_parallax: 'assets/scene2/parallax/', // folder sprite parallax Surabaya (hasil bedah dari Figma)

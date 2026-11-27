@@ -25,8 +25,8 @@ const layer = (cls, src, [x, y, w, hh], alt = '') =>
   h('img', { class: `s0-layer ${cls}`, src, alt, draggable: 'false', decoding: 'async', style: box(x, y, w, hh) });
 
 // Plakat judul + tombol mulai: kanan atas, di antara pohon dan atap peron (posisi dari mock-up; rasio gambar tetap)
-const PLAQUE = [733, 30, 528, 259];   // 1200×589
-const BTN = [857, 290, 283, 73];      // 800×206
+const PLAQUE = [733, 50, 528, 259];   // 1200×589
+const BTN = [857, 310, 283, 73];      // 800×206
 
 // Kereta: kotak diam di peron. Berangkat ke kanan sampai lewat tepi panggung,
 // datang lagi dari balik gedung stasiun (dinding kanan gedung setinggi kereta ada di x ≈ 730).

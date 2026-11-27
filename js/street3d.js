@@ -1136,7 +1136,7 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     tr.position.set(x, 0, z);
     scene.add(tr);
   }
-  for (const x of [-7.4, 8.6, 16, -16]) {
+  for (const x of [-5.6, 6.8, 16, -16]) {
     const lp = buildStreetLamp();
     lp.position.set(x, 0, CURB_Z - 0.35);
     lp.rotation.y = x < 0 ? 0 : Math.PI;
