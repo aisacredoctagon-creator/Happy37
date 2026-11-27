@@ -111,9 +111,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   pointer-events: auto;
 }
 .fs-btn {
-  position: fixed; top: calc(12px + var(--safe-t)); right: 16px; z-index: 65;
-  font-size: 22px; line-height: 1; cursor: pointer;
+  position: fixed; top: calc(12px + var(--safe-t)); left: calc(16px + env(safe-area-inset-left, 0px)); z-index: 65;
+  display: grid; place-items: center; padding: 0; line-height: 1; cursor: pointer;
 }
+.fs-ico { width: 22px; height: 22px; display: block; }
 /* Penjaga orientasi: layar sentuh (HP/tablet) dalam posisi potret → tutup semuanya dengan ajakan memutar layar */
 .rotate-guard {
   display: none;
@@ -131,7 +132,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .rotate-icon { animation: none; } }
 
 .fs-btn.is-on { background: rgba(240, 180, 41, .85); color: #1b130e; }
-.hud-top { padding-right: 72px; }
 .icon-btn.is-muted { opacity: .45; text-decoration: line-through; }
 
 /* ---------------- HUD ---------------- */

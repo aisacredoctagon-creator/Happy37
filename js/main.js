@@ -329,8 +329,12 @@ el.mute.addEventListener('click', () => {
 });
 
 /* ---------------- Layar penuh ---------------- */
-// Tombol ⛶ di pojok kanan atas (juga tombol F). Disembunyikan kalau browser tak mendukung (mis. iPhone Safari).
+// Tombol layar penuh di pojok kiri atas (juga tombol F). Ikon Lucide "expand" / "shrink" (lucide.dev).
+// Disembunyikan kalau browser tak mendukung (mis. iPhone Safari).
 {
+  const svg = (paths) => `<svg class="fs-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+  const FS_EXPAND = svg('<path d="m21 21-6-6m6 6v-4.8m0 4.8h-4.8"/><path d="M3 16.2V21m0 0h4.8M3 21l6-6"/><path d="M21 7.8V3m0 0h-4.8M21 3l-6 6"/><path d="M3 7.8V3m0 0h4.8M3 3l6 6"/>');
+  const FS_SHRINK = svg('<path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8"/><path d="M9 19.8V15m0 0H4.2M9 15l-6 6"/><path d="M15 4.2V9m0 0h4.8M15 9l6-6"/><path d="M9 4.2V9m0 0H4.2M9 9 3 3"/>');
   const fsBtn = $('fsBtn'), root = document.documentElement;
   const request = root.requestFullscreen ?? root.webkitRequestFullscreen;
   const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
@@ -340,7 +344,7 @@ el.mute.addEventListener('click', () => {
     const toggle = () => { try { (isFs() ? exit.call(document) : request.call(root))?.catch?.(() => {}); } catch { /* diabaikan */ } };
     const sync = () => {
       fsBtn.classList.toggle('is-on', isFs());
-      fsBtn.textContent = isFs() ? '✕' : '⛶';
+      fsBtn.innerHTML = isFs() ? FS_SHRINK : FS_EXPAND;
       fsBtn.setAttribute('aria-label', isFs() ? 'Keluar layar penuh' : 'Layar penuh');
     };
     // Situs ini hanya untuk mode mendatar: di layar sentuh, begitu masuk layar penuh kunci orientasi ke landscape
