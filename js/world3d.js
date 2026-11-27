@@ -1113,6 +1113,8 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   return {
     enter,
     enterStage,
+    /** Bersihkan sisa scene 11/12 di toko (video, TV, bola, tombol akhir, timer tertunda via runId) sebelum mundur, mis. "Lihat ucapan" → scene 10. */
+    leaveShop() { shop?.leave(); },
     enterShop,
     enterStreet,
     enterTV,

@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { gsap } from 'gsap';
-import { createGasing3D, GESTURE_TIMING } from './gasing3d.js';
+import { createGasing3D, GESTURE_TIMING, EAT_T, BAG_DOWN_T } from './gasing3d.js';
 import { buildSotoServer } from './server3d.js';
 import { CONFIG } from './config.js';
 import { sfx } from './audio.js';
@@ -36,7 +36,7 @@ const START = { x: -9.8, z: 2.7 };
 const STAND = { x: -3.5 + CART_SHIFT, z: 1.95 };        // menunggu di sini sebelum gerobak diketuk
 const EAT_AT = { x: -0.45 + CART_SHIFT, z: 2.35 };        // berdiri tepat di depan gerobak (di depan bangku) saat makan
 const EAT_TEXTS = ['Nyam...nyam...nyam...', 'Sotonya lezat sekali! mmm!'];   // dua gelembung pikiran berurutan saat makan soto
-const EAT_HOPS = 4;   // lama makan soto: jumlah loncatan senang (×0,8 dtk). 4 = durasi dari branch teman; gelembung ke-2 muncul di pertengahan
+const EAT_LOOPS = 3;   // gestur makan diulang 3 siklus penuh (1 siklus = EAT_T = 2,6 dtk di gasing3d.js). Sebelumnya EAT_HOPS = 9 (≈3 siklus); merge b889926→8df2c94 menurunkannya ke 4 (≈1,3 siklus)
 
 // Penjual soto: '3d' = model toon (server3d.js); '2d' = gambar assets/scene3/penjual-soto.png sebagai sprite
 const SERVER_STYLE = '3d';
@@ -1560,24 +1560,38 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     if (my !== runId) return;
 
     // penjual menyodorkan semangkuk soto; begitu tangannya sampai, Gasing mulai "makan" (animasi Gasing tidak diubah)
+    let eatStart = performance.now();
     const served = serverServe(() => {
       if (my !== runId) return;
+      eatStart = performance.now();
       setBubbleText(EAT_TEXTS[0]);
-      A.text = 0;
-      gsap.fromTo(A, { bubble: 0 }, { bubble: 1, duration: 0.3, ease: 'power1.out' });
-      gsap.to(A, { text: 1, duration: 0.25, delay: 0.3, ease: 'power1.out' });   // teks muncul setelah bubble selesai
+      A.text = 0; A.bubble = 0;
+      // Gelembung pertama muncul SEKALI, tepat saat sendok masuk mulut untuk pertama kali: event 'spoonmouth' dari gasing3d.js (progress siklus makan u ≈ 0.55,
+      // titik yang sama dengan SFX 'nyam'). Hanya {once}: siklus ke-2 & ke-3 tidak memicu lagi.
+      const actorEl = actor;
+      actorEl?.addEventListener('spoonmouth', () => {
+        if (my !== runId) return;
+        gsap.to(A, { bubble: 1, duration: 0.3, ease: 'power1.out' });
+        gsap.to(A, { text: 1, duration: 0.25, delay: 0.3, ease: 'power1.out' });   // teks muncul setelah bubble selesai
+      }, { once: true });
       actor?.setState?.('eat');        // tas diletakkan, tangan memegang mangkuk & sendok
     });
     await served;                      // mangkuk dilepas penjual (Gasing sudah memegang mangkuknya sendiri)
     if (my !== runId) return;
     serverHop();                       // penjual ikut senang
+    // Jendela makan = BAG_DOWN_T (tas turun) + EAT_LOOPS × EAT_T, dihitung dari saat setState('eat'); loncatan ±0,8 dtk tiap langkah sampai jendela habis.
+    // Gelembung ke-2 di tengah jendela makan (setelah siklus ke-1,5). SFX sendok/nyam dipicu gasing3d.js dari jam eatT yang sama → tetap sinkron 3 siklus.
+    const eatEnd = eatStart + (BAG_DOWN_T + EAT_LOOPS * EAT_T) * 1000;
+    const swapAt = eatStart + (BAG_DOWN_T + EAT_LOOPS * EAT_T / 2) * 1000;
+    let swapped = false;
     await sleep(0.7);                  // beri waktu: letakkan tas → angkat mangkuk → suapan pertama
     if (my !== runId) return;
-    for (let i = 0; i < EAT_HOPS; i++) {   // ±0,8 dtk per loncatan; siklus suapan 2,6 dtk → scene baru berakhir setelah suapan ke-3
+    while (performance.now() < eatEnd) {
       actor?.hop();
-      await sleep(0.8);
+      await sleep(Math.min(0.8, Math.max(0.05, (eatEnd - performance.now()) / 1000)));
       if (my !== runId) return;
-      if (i === (EAT_HOPS >> 1) - 1) {   // pertengahan makan: gelembung pertama → kedua
+      if (!swapped && performance.now() >= swapAt) {   // pertengahan makan: gelembung pertama → kedua
+        swapped = true;
         gsap.to(A, { bubble: 0, duration: 0.2 });
         await sleep(0.3);
         if (my !== runId) return;

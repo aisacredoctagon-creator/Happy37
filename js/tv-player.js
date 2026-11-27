@@ -1,6 +1,6 @@
 // ============================================================
 //  PEMAIN VIDEO TV (scene 12) — kontrol minimalis di atas layar saat TV di-zoom:
-//  play/pause · progress bar (bisa digeser) · mute + volume · tutup. Kontrol tersembunyi otomatis saat video berjalan,
+//  play/pause · progress bar (bisa digeser) · mute + volume. Menutup video: Escape, atau tombol ✕ layar penuh (#fsBtn, main.js → closeActiveTVPlayer). Kontrol tersembunyi otomatis saat video berjalan,
 //  muncul lagi saat mouse bergerak / layar disentuh. Autoplay bersuara diblokir → tombol play besar (tidak pernah diputar diam-diam).
 //  Audio video lewat graf audio game (audio.attachMedia): ikut mute game, ada limiter, fade-in/out halus.
 //  Semua suara game dibisukan saat video diputar (audio.silenceGame) dan kembali setelah selesai / ditutup (jeda video TIDAK mengembalikannya).
@@ -11,11 +11,14 @@ const FADE_IN = 0.5, FADE_OUT = 0.45, END_FADE = 0.7, HIDE_AFTER = 2600;
 const fmt = (t) => { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Pemain yang sedang aktif (satu saja): dipakai main.js supaya tombol ✕ layar penuh ikut menutup video. */
+let current = null;
+export function closeActiveTVPlayer() { return current?.close(); }
+
 export function createTVPlayer(video, { onExit } = {}) {
   const mk = (tag, cls, attrs = {}, text) => { const e = document.createElement(tag); e.className = cls; for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text) e.textContent = text; return e; };
   const root = mk('div', 'tvp'); root.hidden = true;
   const hit = mk('div', 'tvp-hit');
-  const close = mk('button', 'tvp-btn tvp-close', { type: 'button', 'aria-label': 'Tutup video' }, '✕');
   const big = mk('button', 'tvp-big', { type: 'button', 'aria-label': 'Klik untuk memutar' }, '▶'); big.hidden = true;
   const bigHint = mk('span', 'tvp-big-hint', {}, 'Klik untuk memutar');
   const bar = mk('div', 'tvp-bar');
@@ -26,7 +29,7 @@ export function createTVPlayer(video, { onExit } = {}) {
   const volume = mk('input', 'tvp-vol', { type: 'range', min: '0', max: '1', value: '1', step: '0.05', 'aria-label': 'Volume' });
   bar.append(play, time, prog, mute, volume);
   big.append(bigHint);
-  root.append(hit, close, big, bar);
+  root.append(hit, big, bar);
   document.body.appendChild(root);
 
   let active = false, userMuted = false, vol = 1, media = null, hideT = 0, endFaded = false, finishing = false;
@@ -74,6 +77,7 @@ export function createTVPlayer(video, { onExit } = {}) {
     root.hidden = true; root.classList.remove('is-leaving');
     audio.silenceGame(false, 1.0);                                              // suara game kembali normal (fade in)
     finishing = false;
+    if (current === api) current = null;
     onExit?.(info);
   }
 
@@ -83,7 +87,6 @@ export function createTVPlayer(video, { onExit } = {}) {
   bar.addEventListener('pointermove', showControls);
   play.addEventListener('click', togglePause);
   big.addEventListener('click', async () => { if (video.ended) video.currentTime = 0; await startPlayback(); });
-  close.addEventListener('click', () => finish({ ended: false }));
   mute.addEventListener('click', () => { userMuted = !userMuted; setGain(level(), 0.15); sync(); });
   volume.addEventListener('input', () => { vol = Number(volume.value); userMuted = false; setGain(level(), 0.05); sync(); });
   prog.addEventListener('input', () => { if (video.duration) { video.currentTime = (Number(prog.value) / 1000) * video.duration; endFaded = false; sync(); } });
@@ -103,7 +106,8 @@ export function createTVPlayer(video, { onExit } = {}) {
     else if (e.key === ' ' && e.target === document.body) { e.preventDefault(); togglePause(); }
   });
 
-  return {
+  const api = {
+    close() { return finish({ ended: false }); },
     /** Dipanggil di dalam gestur pengguna (klik / ketuk): membuka kunci putar video, supaya iOS mengizinkan play() setelah zoom. */
     prime() {
       media = media || audio.attachMedia(video);
@@ -114,13 +118,14 @@ export function createTVPlayer(video, { onExit } = {}) {
     /** Setelah zoom in selesai: tampilkan kontrol & putar dari awal. */
     async start() {
       media = media || audio.attachMedia(video);
-      active = true; endFaded = false; finishing = false;
+      active = true; endFaded = false; finishing = false; current = api;
       root.hidden = false; root.classList.remove('is-idle', 'is-leaving');
       video.currentTime = 0;
       await startPlayback();
     },
     /** Tutup tanpa animasi (scene dibongkar): hentikan semuanya, kembalikan musik. */
     abort() {
+      if (current === api) current = null;
       const was = active; active = false; finishing = false; clearTimeout(hideT);
       root.hidden = true; big.hidden = true;
       if (was || !video.paused) { try { video.pause(); } catch {} }
@@ -129,4 +134,5 @@ export function createTVPlayer(video, { onExit } = {}) {
     },
     get active() { return active; },
   };
+  return api;
 }

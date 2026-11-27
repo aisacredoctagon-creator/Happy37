@@ -301,9 +301,40 @@ button { font: inherit; color: inherit; cursor: pointer; }
   to { transform: translate3d(102cqw, 0, 0); }
 }
 @media (prefers-reduced-motion: reduce) { .s0-clouds img { animation-play-state: paused; } }
+/* Sebelum tap pertama, scene 0 diam total (awan baru melayang setelah js/scene0.js start() memberi .is-running) */
+.s0 .s0-clouds img { animation-play-state: paused; }
+.s0.is-running .s0-clouds img { animation-play-state: running; }
+@media (prefers-reduced-motion: reduce) { .s0.is-running .s0-clouds img { animation-play-state: paused; } }
 /* Gasing berdiri di trotoar, di depan pintu kanan stasiun (x ≈ 905/1779) */
 .s0-gasing { position: absolute; will-change: transform; }   /* posisi/ukuran: style inline dari js/scene0.js (jangan pakai `translate` — GSAP menimpanya) */
 .s0-skyline-x { overflow: hidden; transform: scaleX(-1); }
+/* Indikator tap (js/scene0.js): ikon jari + 2 ripple berdenyut + teks, di jalan sisi kanan. Muncul (.is-on) setelah aset siap, hilang (.is-out) saat tap. 1cqw = 1% lebar panggung */
+.s0.is-armed { cursor: pointer; }
+.s0-tap {
+  position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.1cqw;
+  pointer-events: none; opacity: 0; transition: opacity .4s ease;
+}
+.s0-tap.is-on { opacity: 1; }
+.s0-tap.is-out { opacity: 0; transition-duration: .25s; }
+.s0-tap-ico { position: relative; display: grid; place-items: center; width: 8cqw; height: 8cqw; }
+.s0-tap-ico::before, .s0-tap-ico::after {
+  content: ""; position: absolute; left: 50%; top: 22%; width: 7.5cqw; height: 7.5cqw; margin: -3.75cqw 0 0 -3.75cqw; border-radius: 50%;
+  border: .4cqw solid rgba(255, 255, 255, .95); box-shadow: 0 0 .8cqw rgba(7, 24, 58, .35);
+  opacity: 0; transform: scale(.25); animation: s0-ripple 1.8s ease-out infinite;
+}
+.s0-tap-ico::after { animation-delay: .9s; }
+.s0-tap-ico svg {
+  position: relative; width: 100%; height: 100%; overflow: visible;
+  fill: #fff; stroke: #0b3a86; stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round;
+  filter: drop-shadow(0 .4cqw .5cqw rgba(7, 24, 58, .4)); transform-origin: 35% 25%; animation: s0-tap-press 1.8s ease-in-out infinite;
+}
+.s0-tap-txt {
+  font-family: var(--font-display); font-weight: 700; font-size: 2.6cqw; line-height: 1; white-space: nowrap; color: #fff;
+  text-shadow: 0 .15cqw 0 #0b3a86, 0 .5cqw 1.2cqw rgba(7, 24, 58, .45);
+}
+@keyframes s0-ripple { 0% { opacity: .95; transform: scale(.25); } 70%, 100% { opacity: 0; transform: scale(1.5); } }
+@keyframes s0-tap-press { 0%, 55%, 100% { transform: translateY(0) scale(1); } 22% { transform: translateY(.5cqw) scale(.92); } }
+@media (prefers-reduced-motion: reduce) { .s0-tap-ico::before, .s0-tap-ico::after, .s0-tap-ico svg { animation: none; } .s0-tap-ico::before { opacity: .8; transform: scale(1); } }
 .s0-skyline-x > img { display: block; width: 153.55%; height: 100%; max-width: none; }
 /* Plakat + tombol (gambar) di kanan atas, posisi/ukuran dari js/scene0.js. Tombol = <button> berisi gambar pil kuning;
    saat hover/fokus: membesar sedikit + kilau putih menyapu dari kiri ke kanan (dipotong mengikuti bentuk pil lewat mask gambarnya) */
@@ -350,12 +381,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .s0-btn:hover .s0-btn-shine::before, .s0-btn:focus-visible .s0-btn-shine::before { animation: none; } }
 /* Pembungkus tombol: posisi lewat style inline (box dari scene0.js) */
 .s0-btn-anchor { position: absolute; }
-.start-tip {
-  position: absolute; left: 0; right: 0; bottom: calc(10px + var(--safe-b)); margin: 0;
-  text-align: center; font-size: 12px; font-weight: 600;
-  color: #fff; opacity: .85; text-shadow: 0 1px 3px rgba(0, 0, 0, .6);
-  pointer-events: none;
-}
+
+
 
 /* ============================================================
    SLOT ASET + PLACEHOLDER
@@ -881,6 +908,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
   z-index: 46; opacity: 0; pointer-events: none;
 }
 #endBar { position: fixed; }   /* versi 3D (scene 12 di toko): tombol di luar .scene */
+/* Dua tombol akhir ("Putar ulang" + "Lihat ucapan") simetris: tinggi, padding, jarak ikon–teks & rata tengah sama di semua ukuran window;
+   ikon = set garis yang sama (stroke 2, 20×20, ujung bulat), warna ikut teks */
+.end-bar { align-items: stretch; }
+#endRestart { order: -1; }   /* urutan tampil: "Putar ulang" lalu "Lihat ucapan" */
+.end-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  box-sizing: border-box; min-height: 48px; padding: 0 24px; min-width: 168px; line-height: 1; white-space: nowrap;
+  font-size: clamp(15px, 1.6vw, 18px);
+}
+.end-btn > span { display: block; }
+.end-ico { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* "Mulai dari awal" (scene 10 putaran kedua): tombol sekunder outline, di tengah atas seperti .end-bar; tidak menutupi tombol "Tutup Koper" (bawah) maupun surat */
+.restart-btn.btn-outline {
+  position: fixed; top: calc(var(--hud-h) + var(--safe-t) + 8px); left: 50%; translate: -50% 0; z-index: 46;
+  background: rgba(27, 19, 14, .35); color: var(--cream); border: 2px solid rgba(246, 239, 226, .75);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .3); backdrop-filter: blur(4px);
+}
+.restart-btn.btn-outline:hover, .restart-btn.btn-outline:focus-visible { background: rgba(246, 239, 226, .16); border-color: var(--mustard); color: #fff; }
+.restart-btn.btn-outline:active { box-shadow: 0 1px 6px rgba(0, 0, 0, .3); }
+.restart-btn[hidden] { display: none; }
+@media (max-width: 480px) { .end-btn { min-width: 0; padding: 0 18px; flex: 1 1 0; } }
 
 /* Tas & bola tenis di toko 3D (js/shop3d.js, scene 11–12) — diproyeksikan seperti Gasing */
 .shop-ball {
@@ -989,14 +1037,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .dbg-audio-note { display: block; font-size: 10px; opacity: .8; }
 
 /* Pemain video TV (scene 12) — js/tv-player.js */
-.tvp { position: fixed; inset: 0; z-index: 70; pointer-events: none; opacity: 1; transition: opacity .35s ease; }
+.tvp { position: fixed; inset: 0; z-index: 64;   /* di bawah tombol ✕ / ⛶ layar penuh (z 65) supaya tetap bisa diklik saat video */ pointer-events: none; opacity: 1; transition: opacity .35s ease; }
 .tvp[hidden] { display: none; }
 .tvp.is-leaving { opacity: 0; }
 .tvp-hit { position: absolute; inset: 0; pointer-events: auto; cursor: pointer; }
 .tvp.is-idle .tvp-hit { cursor: none; }
-.tvp-bar, .tvp-close { transition: opacity .3s ease, transform .3s ease; }
+.tvp-bar { transition: opacity .3s ease, transform .3s ease; }
 .tvp.is-idle .tvp-bar { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px); }
-.tvp.is-idle .tvp-close { opacity: 0; pointer-events: none; }
 .tvp-bar {
   position: absolute; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%);
   width: min(94vw, 640px); display: flex; align-items: center; gap: 10px; padding: 8px 14px;
@@ -1005,7 +1052,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .tvp-btn { width: 36px; height: 36px; flex: none; border: 0; border-radius: 50%; background: rgba(246, 239, 226, .12); color: var(--cream); font-size: 15px; line-height: 1; display: grid; place-items: center; }
 .tvp-btn:hover { background: rgba(246, 239, 226, .24); }
-.tvp-close { position: absolute; top: calc(12px + var(--safe-t)); right: 12px; pointer-events: auto; width: 42px; height: 42px; background: rgba(27, 19, 14, .72); font-size: 18px; }
 .tvp-time { flex: none; font: 600 12px/1 var(--font-body); font-variant-numeric: tabular-nums; opacity: .85; min-width: 74px; text-align: center; }
 .tvp input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; height: 22px; margin: 0; cursor: pointer; }
 .tvp input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: rgba(246, 239, 226, .25); }

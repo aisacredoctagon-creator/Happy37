@@ -6,6 +6,7 @@ import { mountScene0 } from './scene0.js';
 import { createDebugPanel } from './debug.js';
 import { audio } from './audio.js';
 import { createAudioIndicator } from './audio-indicator.js';
+import { closeActiveTVPlayer } from './tv-player.js';
 
 const TITLES = {
   0: 'Pembuka', 1: 'Tiket', 2: 'Di Kereta', 3: 'Surabaya', 4: 'Toko Antik',
@@ -27,13 +28,15 @@ const el = {
 
 /* ---------------- Scene 0 (halaman pembuka) ---------------- */
 el.startTitle.textContent = `Sebuah perjalanan kecil untuk ${CONFIG.recipient}`;
-const scene0 = mountScene0(el.start, el.startBtn);
+// onStart = tap pertama sudah membuka audio dan intro mulai (main.js hanya memasang cadangan pemuatan dunia 3D)
+const scene0 = mountScene0(el.start, el.startBtn, { onStart: () => { clearTimeout(preloadTimer); preloadTimer = setTimeout(preloadWorld, 40000); } });
 
 let stage = 0;      // scene yang sedang ditampilkan (0 = pembuka, 1–12), ikut berubah saat alur 3D maju sendiri
 let debugPanel = null;
 
 function setStage(n) {
   stage = n;
+  if (n >= 11) { hideRestart(); fromGreeting = false; }   // (enterStage(10) memanggil setStage(9) dulu, jadi hanya n ≥ 11) scene 11/12 dicapai tanpa goTo (alur 3D mulus): "Mulai dari awal" hanya untuk scene 10
   debugPanel?.update(n);
   audio.setScene(n);          // musik & ambience scene ini (crossfade), SFX pembuka, preload scene berikutnya
 }
@@ -123,12 +126,13 @@ function openNote(part, { engraved = false } = {}) {
   });
 }
 
-// Pop-up tombol akhir (scene 12 versi 3D): hanya muncul setelah video selesai / ditutup. "Putar ulang" memanggil onWatch() (zoom in + putar, lihat shop3d.js & tv-player.js)
+// Pop-up tombol akhir (scene 12 versi 3D): hanya muncul setelah video selesai / ditutup. "Ulangi video" memanggil onWatch() (zoom in + putar dari awal, lihat shop3d.js & tv-player.js); "Lihat ucapan" → scene 10
 let endWatchHandler = null;
-function showEnd(onWatch, label = '↻ Putar ulang') {
+function showEnd(onWatch, label = 'Lihat ucapan') {
   endWatchHandler = onWatch;
   el.endWatch.hidden = !onWatch;
-  el.endWatch.textContent = label;
+  el.endRestart.hidden = !onWatch;   // "Ulangi video" butuh handler pemutaran
+  $('endWatchLabel').textContent = label;
   el.endBar.hidden = false;
   gsap.killTweensOf(el.endBar);
   gsap.fromTo(el.endBar, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 });
@@ -138,9 +142,33 @@ function hideEnd() {
   gsap.killTweensOf(el.endBar);
   el.endBar.hidden = true;
 }
-el.endWatch.addEventListener('click', () => { audio.sfx('btn_press'); endWatchHandler?.(); });
-el.endRestart.addEventListener('click', () => { audio.sfx('ui_click'); hideEnd(); goTo(1); });
+// "Lihat ucapan": kembali ke scene 10 lewat goTo (alur normal sesudahnya: 10 → 11 → 12). Pembersihan scene 12 ada di goTo (leaveShop + confetti).
+el.endWatch.addEventListener('click', () => { if (!endWatchHandler) return; audio.sfx('btn_press'); hideEnd(); fromGreeting = true; goTo(10); });
+// "Ulangi video": putar video yang baru ditonton dari awal (BUKAN mengulang scene): pop-up & confetti disembunyikan, audio lain dimatikan oleh player (silenceGame) seperti pemutaran pertama.
+// Pop-up + confetti (tepat 1×) muncul lagi lewat afterWatching() di shop3d.js saat video selesai.
+el.endRestart.addEventListener('click', () => { const play = endWatchHandler; if (!play) return; audio.sfx('ui_click'); hideEnd(); clearConfetti(); play(); });
 
+// Penanda "scene 10 dibuka lewat Lihat ucapan dari scene 12": hanya itu yang memunculkan tombol "Mulai dari awal" di scene 10 (putaran kedua).
+// Dihapus begitu keluar dari scene 10; "Mulai dari awal" memuat ulang halaman (sama seperti debug jump ke scene 0) → semua state, timer, listener & audio benar-benar baru.
+let fromGreeting = false;
+const restartBtn = $('restartBtn');
+function hideRestart() { restartBtn.hidden = true; }
+restartBtn.addEventListener('click', async () => {
+  if (restartBtn.disabled) return;
+  restartBtn.disabled = true;
+  audio.sfx('ui_click');
+  fromGreeting = false;
+  await fade(1, 'black', 0.4);
+  const url = new URL(location.href);
+  url.searchParams.delete('scene');
+  location.href = url;
+});
+
+/** Hapus confetti yang masih jatuh / tertunda (tween GSAP + elemen) — dipakai saat scene dibongkar. */
+function clearConfetti() {
+  gsap.killTweensOf(el.confetti.children);
+  el.confetti.replaceChildren();
+}
 function confetti() {
   audio.sfx('confetti');
   const colors = ['#e4572e', '#f2b134', '#b4d44e', '#3fa7d6', '#f6efe2', '#d16ba5'];
@@ -227,12 +255,17 @@ async function goTo(n, { fade: fadeColor = 'black', force = false } = {}) {
 
   // bongkar scene lama (termasuk semua suaranya: one-shot, loop event, ambience)
   audio.stopScene();
+  clearConfetti();
+  if (n === 10 && stage >= 11) (await worldPromise?.catch(() => null))?.leaveShop?.();   // mundur dari scene 11/12 (mis. "Lihat ucapan"): hentikan video, TV, bola, timer tertunda
+  if (stale()) return;
   active2d?.exit?.();
   gctx?.revert();
   active2d = null; gctx = null;
   el.stage.replaceChildren();
   cancelNote?.();
-  hideAction(); hint(null); counter(null); hideEnd();
+  hideAction(); hint(null); counter(null); hideEnd(); hideRestart();
+  const showRestart = n === 10 && fromGreeting;   // putaran kedua (lewat Lihat ucapan)
+  if (n !== 10) fromGreeting = false;
 
   current = n;
   if (is3D(n)) {
@@ -276,6 +309,7 @@ async function goTo(n, { fade: fadeColor = 'black', force = false } = {}) {
 
   await fade(0, fadeColor, 0.6);
   if (stale()) return;
+  if (showRestart) { restartBtn.disabled = false; restartBtn.hidden = false; gsap.fromTo(restartBtn, { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4, clearProps: 'transform' }); }
   busy = false;
 }
 
@@ -316,12 +350,14 @@ el.mute.addEventListener('click', () => {
       if (isFs()) screen.orientation?.lock?.('landscape')?.catch?.(() => {});
       else screen.orientation?.unlock?.();
     };
-    fsBtn.addEventListener('click', toggle);
-    document.addEventListener('fullscreenchange', () => { sync(); lockLandscape(); });
-    document.addEventListener('webkitfullscreenchange', () => { sync(); lockLandscape(); });
-    // di HP: tombol "Mulai Perjalanan" sekaligus masuk layar penuh + kunci landscape (butuh sentuhan pengguna)
+    // ✕ layar penuh = satu-satunya tombol ✕ saat video TV: keluar layar penuh SEKALIGUS menutup video (finish → video berhenti, suara game kembali, zoom TV keluar)
+    fsBtn.addEventListener('click', () => { if (isFs()) closeActiveTVPlayer(); toggle(); });
+    const onFsChange = () => { sync(); lockLandscape(); if (!isFs()) closeActiveTVPlayer(); };   // juga saat keluar lewat Escape bawaan browser
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    // di HP: tap pertama di scene 0 (dan "Mulai Perjalanan") sekaligus masuk layar penuh + kunci landscape (butuh sentuhan pengguna)
     if (matchMedia('(pointer: coarse)').matches) {
-      $('startBtn')?.addEventListener('click', () => { if (!isFs()) toggle(); });
+      $('start')?.addEventListener('click', () => { if (!isFs()) toggle(); });   // tap pertama (scene 0) / "Mulai Perjalanan"
     }
     addEventListener('keydown', (e) => {
       if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) toggle();
@@ -354,16 +390,17 @@ const startScene = Math.min(TOTAL, Math.max(1, parseInt(params.get('scene') ?? '
 let started = false;
 // Dunia 3D dimuat saat scene 0 sudah diam (Gasing sudah turun, tombol tampil), bukan saat tombol diklik
 const preloadWorld = () => getWorld().catch((err) => console.warn('3D preload gagal:', err));
-let preloadTimer = setTimeout(preloadWorld, 20000);   // cadangan kalau intro tak pernah selesai
+let preloadTimer = null;   // baru dipasang saat intro dimulai (setelah tap pertama): sebelum itu tidak ada timer apa pun yang berjalan
 scene0.introDone.then(() => {
   if (started) return;
   clearTimeout(preloadTimer);
   preloadTimer = setTimeout(() => ('requestIdleCallback' in window ? requestIdleCallback(preloadWorld, { timeout: 2000 }) : preloadWorld()), 1200);
 });
+
 async function begin(n) {
   if (started) return;
   started = true;
-  audio.unlock().then(() => audio.sfx('btn_press'));   // klik "Mulai Perjalanan"; harus di dalam gestur (aturan autoplay iOS)
+  audio.unlock().then(() => audio.sfx('btn_press'));   // klik "Mulai Perjalanan" (atau debug); harus di dalam gestur (aturan autoplay iOS)
   el.startBtn.disabled = true;
   clearTimeout(preloadTimer);   // jangan memuat dunia 3D saat Gasing sedang berjalan masuk: main thread terkunci ±0,7 dtk → animasi macet
   const entering = scene0.enter();   // Gasing berbalik & berjalan masuk stasiun

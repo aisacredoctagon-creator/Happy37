@@ -6,7 +6,8 @@ Kredit lengkap per file: `assets/audio/CREDITS.md`. Semua sumber **CC0 / domain 
 ## Cara kerja singkat
 
 - **Bus**: `music`, `ambience`, `sfx` → `master` → limiter (pengaman clipping). Volume awal bus di `BUSES` (manifest).
-- **Mulai**: audio baru aktif setelah tombol **Mulai** (aturan autoplay, termasuk iOS). Tombol 🔇 (`#muteBtn`) yang sudah ada sekarang membisukan semua bus.
+- **Mulai**: audio baru aktif setelah **tap pertama** di scene 0 (indikator "Tap untuk mulai", `js/scene0.js`; aturan autoplay, termasuk iOS). Sebelum itu semua file scene 0 hanya di-decode (`audio.preload`, lewat `OfflineAudioContext`, tanpa AudioContext sungguhan) dan tidak ada yang berbunyi. Tap → `audio.unlock()` di dalam gestur → bus, Gasing & semua suara mulai bersamaan. Tombol 🔇 (`#muteBtn`) membisukan semua bus.
+- **Scene 0 (intro bus)**: `bus_gerak` diputar lewat `audio.playTimed()` dengan **potongan saat playback** (file & kecepatan tidak diubah): `AUDIO_CUT` di `js/scene0.js` = kedatangan 3,0–13,4 dtk, bagian tengah dibuang, lalu 23,4 dtk–akhir; sambungan = crossfade daya-sama 0,8 dtk (`xfade`) yang dipusatkan di batas. `h.time()` = posisi FILE yang terdengar, dan timeline GSAP intro dikunci ke jam itu; jadwal visual di konstanta `T` (busStop 6,5 · doorOpen 7,5 · busGo 24,2 · busGone 30,7). `street0` = ambience street pelan di bawahnya (fade in 2,5 dtk); keduanya memudar `FADE.scene0Out` (2,4 dtk) saat "Mulai Perjalanan" ditekan (`audio.fadeOutAmbient()`).
 - **Per scene** (`SCENES` di manifest): musik & ambience crossfade otomatis saat scene berganti, termasuk saat dunia 3D maju sendiri (`setStage`) dan saat loncat lewat `?debug`. Saat scene dibongkar, semua one-shot & loop scene lama dihentikan/dipudarkan. Musik yang sama di scene berikutnya diteruskan tanpa diulang dari awal.
 - **Muat per scene**: file scene aktif dimuat saat scene dimulai, file scene berikutnya dipreload di latar.
 - **Sinkron animasi**: SFX dipanggil dari event animasi, bukan `setTimeout`: loncatan Gasing (`hop()`), fase siklus makan (sendok di mangkuk u≈0.04, sendok di mulut u≈0.55), titik sentuh lantai ease `bounce.out` bola, `onStart`/`onComplete` tween kaca etalase & tutup koper, dll.
@@ -37,13 +38,15 @@ Volume = `volume` id di manifest (dikali volume bus: music 0.32 · ambience 0.22
 | 1 | Suasana stasiun | ambience | `station` | amb/station.mp3 | 0.8 | ya | 27.0 s | natalie, Wikimedia Commons · domain publik |
 | 2 | Kereta melaju | ambience | `train` | amb/train.mp3 | 1.0 | ya | 40.0 s | Jidanni, Wikimedia Commons · CC0 |
 | 3 | Jalan Surabaya | ambience | `street` | amb/street.mp3 | 0.8 | ya | 45.0 s | cori, Wikimedia Commons · domain publik |
+| 0 | Jalan depan stasiun (di bawah suara bus) | ambience | `street0` | amb/street.mp3 | 0.5 | ya | 45.0 s | file sama dengan `street` |
+| 0 | Bus datang, berhenti (pintu terbuka ±7–8 dtk), berangkat (±24 dtk) — pemandu animasi | ambience | `bus_gerak` | amb/bus gerak.mp3 | 0.7 | tidak | 36.96 s | disediakan pemilik proyek (sumber/lisensi belum dicatat) |
 | 4–12 | Detak jam toko antik | ambience | `clock` | amb/clock.mp3 | 0.7 | ya | 8.0 s | bart, OpenGameArt · CC0 |
 | 12 | Statis TV (selama layar bersalju) | ambience | `tvstatic` | amb/tvstatic.mp3 | 0.9 | ya | 4.0 s | bretbernhoft, OpenGameArt · CC0 |
 | Awal | Tombol Mulai | SFX | `ui_start` | sfx/ui_start.mp3 | 0.7 | – | 0.54 s | Kenney *Interface Sounds* · CC0 |
 | Semua | Tombol aksi / ketuk gerobak, toko, koper / tombol akhir | SFX | `ui_click` | sfx/ui_click.mp3 | 0.6 | – | 0.08 s | Kenney *UI Audio* · CC0 |
 | — | (cadangan tombol tutup; ✕ catatan memakai `note_close`) | SFX | `ui_close` | sfx/ui_close.mp3 | 0.6 | – | 0.15 s | Kenney *Interface Sounds* · CC0 |
 | Semua | Transisi pindah scene (fade) · zoom ke bagian kereta | SFX | `whoosh` | sfx/whoosh.mp3 | 0.35 | – | 0.11 s | artisticdude, *Swishes* · CC0 |
-| Semua | Gasing meloncat (juga langkah loncat saat berjalan) | SFX | `hop` | sfx/hop.mp3 | 0.2 | – | 0.42 s | EZduzziteh, *Boings* · CC0 |
+| Semua | Gasing meloncat (juga langkah loncat saat berjalan; scene 0: satu boing per lengkung loncat, ×0,5, lewat `.call()` di timeline) | SFX | `hop` | sfx/hop.mp3 | 0.2 | – | 0.42 s | EZduzziteh, *Boings* · CC0 |
 | 1 | Pengumuman kedatangan (awal scene) | SFX | `station_chime` | sfx/station_chime.mp3 | 0.35 | – | 5.49 s | Lexcie, Wikimedia Commons · CC0 |
 | 1 | Ketuk tiket | SFX | `paper` | sfx/paper.mp3 | 0.6 | – | 0.69 s | Kenney *RPG Audio* · CC0 |
 | 1 | Stempel "BERANGKAT" mendarat | SFX | `stamp` | sfx/stamp.mp3 | 0.7 | – | 0.28 s | Kenney *RPG Audio* · CC0 |
