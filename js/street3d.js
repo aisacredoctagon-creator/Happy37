@@ -1226,13 +1226,48 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     scene.add(m);
     return m;
   };
-  const cartRing = mkRing(CART.x + 0.3, CART.z + 0.35, 3.9);
-  const shopRing = mkRing(SHOP.x, WALL_Z + 1.1, 3.3);
+  const cartRing = mkRing(CART.x + 0.3, CART.z + 0.35, 3.9);   // (toko antik tidak memakai cincin: bangunannya sendiri yang menyala, lihat "Sorotan bangunan toko")
 
   // kotak ketuk (tak terlihat) — lebih besar dari modelnya supaya mudah diketuk di HP
   const hitMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
   const cartHit = put(scene, new THREE.Mesh(new THREE.BoxGeometry(3.8, 3.0, 2.2), hitMat), CART.x + 0.4, 1.5, CART.z + 0.3);
   const shopHit = put(shopGroup, new THREE.Mesh(new THREE.BoxGeometry(SHOP.w, 3.6, 2.2), hitMat), 0, 1.8, 0.9);
+
+  /* ---------------- Sorotan bangunan toko ---------------- */
+  // Pengganti cincin di tanah: seluruh bangunan toko menyala hangat (berdenyut pelan saat menunggu diketuk). Saat kursor di atasnya
+  // bangunan terangkat sedikit (membal) dan bersinar lebih terang. Material toko diduplikat dulu supaya bangunan lain tidak ikut menyala.
+  const HI_COLOR = new THREE.Color(0xffa94d);
+  const shopHi = { hover: 0 };
+  let shopWasHover = false;
+  const hiMats = [];                                   // { mat, base } — base = warna asli (bahan tanpa emissive, mis. jendela/lampu)
+  {
+    const cloned = new Map();
+    const swap = (m) => {
+      if (m === doorMat || m === hitMat) return m;     // interior pintu diatur terpisah (applyFx); kotak ketuk tak terlihat
+      if (!cloned.has(m)) {
+        const c = m.clone();
+        const emissive = 'emissive' in c && c.emissive.getHex() === 0;
+        if (emissive) c.emissive.copy(HI_COLOR);
+        hiMats.push({ mat: c, base: emissive ? null : c.color?.clone() ?? null });
+        cloned.set(m, c);
+      }
+      return cloned.get(m);
+    };
+    shopGroup.traverse((o) => {
+      if (!o.isMesh || o === shopHit) return;
+      o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material);
+    });
+  }
+  /** g = tingkat sorotan 0…~1: bahan ber-emissive disinari warna hangat, bahan polos (jendela, lampu) dicerahkan. */
+  function setShopHighlight(g = 0) {
+    for (const { mat, base } of hiMats) {
+      if (!base) mat.emissiveIntensity = g * 0.4;
+      else mat.color.copy(base).multiplyScalar(1 + g * 0.45);
+    }
+    shopGroup.position.y = shopHi.hover * 0.1;
+    shopGroup.scale.setScalar(1 + shopHi.hover * 0.015);
+  }
+  setShopHighlight(0);
 
   /* ---------------- Kamera ---------------- */
   function computeView(name) {
@@ -1473,12 +1508,13 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     runId++;
     camTween?.kill(); camTween = null;
     walkTween?.kill(); walkTween = null;
-    gsap.killTweensOf([A, fx, cartM, shopM, cart.steam, cartRing.material, shopRing.material]);
+    gsap.killTweensOf([A, fx, cartM, shopM, shopHi, cart.steam, cartRing.material]);
     killActor();
     fx.door = 0; applyFx();
     cart.steam.k = 1;
     serverReset();
-    cartRing.material.opacity = 0; shopRing.material.opacity = 0;
+    cartRing.material.opacity = 0;
+    shopHi.hover = 0; shopWasHover = false; setShopHighlight(0);
     A.fade = 1; A.bubble = 0; A.text = 0; A.walking = false;
     state = 'off';
     canvas.style.cursor = 'default';
@@ -1641,9 +1677,15 @@ export function createStreet({ renderer, canvas, ui, onDone }) {
     const pulse = 0.5 + Math.sin(t * 3) * 0.5;
     const hs = hoverTarget ? 0.07 : 0;
     cartRing.material.opacity = cartM.o * (0.35 + pulse * 0.4 + hs * 3);
-    shopRing.material.opacity = shopM.o * (0.35 + pulse * 0.4 + hs * 3);
     const rs = 1 + pulse * 0.05;
-    cartRing.scale.setScalar(rs); shopRing.scale.setScalar(rs);
+    cartRing.scale.setScalar(rs);
+    // toko antik: kursor di atas bangunan → animasi angkat membal + sinar lebih terang; menunggu → denyut hangat pelan
+    const overShop = state === 'shop' && hoverTarget;
+    if (overShop !== shopWasHover) {
+      shopWasHover = overShop;
+      gsap.to(shopHi, overShop ? { hover: 1, duration: 0.45, ease: 'back.out(2.6)' } : { hover: 0, duration: 0.3, ease: 'power2.out' });
+    }
+    setShopHighlight(shopM.o * (0.18 + pulse * 0.22) + shopHi.hover * 0.45);
   }
 
   function resize(w, h) {

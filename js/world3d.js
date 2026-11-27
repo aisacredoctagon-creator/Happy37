@@ -73,8 +73,9 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   /* ---------------- Material ---------------- */
   const M = {
     // envMapIntensity: di dalam toko ada environment map; dikecilkan supaya kulit tidak pucat (tak berpengaruh di scene mandiri)
-    leather: new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.72, envMapIntensity: 0.3 }),
-    leatherDark: new THREE.MeshStandardMaterial({ color: 0x5a341d, roughness: 0.8, envMapIntensity: 0.3 }),
+    // kulit usang: tekstur kanvas prosedural (butiran, lipatan, goresan pucat) → warna + bump + roughness
+    leather: new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.78, envMapIntensity: 0.3, ...wornLeatherMaps(1) }),
+    leatherDark: new THREE.MeshStandardMaterial({ color: 0x5a341d, roughness: 0.85, envMapIntensity: 0.3, ...wornLeatherMaps(2) }),
     brass: new THREE.MeshStandardMaterial({ color: 0xc9a54a, metalness: 0.85, roughness: 0.32 }),
     // bingkai kartu bagian (scene 5+): kuningan terang, beludru alas, permata merah
     brassLight: new THREE.MeshStandardMaterial({ color: 0xd2b25a, metalness: 0.85, roughness: 0.3, envMapIntensity: 0.5 }),
@@ -86,7 +87,9 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   };
 
   const box = (w, h, d, mat, r = 0.025) => {
-    const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w * 0.45, h * 0.45, d * 0.45)), mat);
+    const geo = new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w * 0.45, h * 0.45, d * 0.45));
+    if (mat === M.leather || mat === M.leatherDark) worldUV(geo);   // butiran kulit seragam di semua sisi
+    const m = new THREE.Mesh(geo, mat);
     m.castShadow = true; m.receiveShadow = true;
     return m;
   };
@@ -97,6 +100,7 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   // scene toko antik (js/shop3d.js, skala mengecil) sehingga scene 4 → 5 satu ruang yang sama dan toko
   // menjadi latar scene 5–10. Kalau toko gagal dibangun → pakai scene mandiri (meja + gradien) di bawah.
   const base = new THREE.Group();
+  base.userData.shellMats = [M.leather, M.leatherDark, M.brass];   // dipakai shop3d untuk pendar "ketuk koper" di scene 4
   let shop = null;
   let mode = 'case'; // 'shop' = shop3d yang mengatur kamera | 'street' = street3d (scene 3) | 'case' = dunia koper yang mengatur kamera
   // Jalan Surabaya (scene 3) dibangun saat pertama dibutuhkan, supaya tidak memperlambat pemuatan awal
@@ -233,7 +237,9 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     lidPivot.add(at(box(0.22, 0.22, 0.22, M.brass, 0.06), sx * (W / 2 - 0.08), HL - 0.1, sz ? D - 0.08 : 0.08));
   }
   // Pegangan: menempel di muka depan tutup (satu bidang dengan gembok), melengkung di dalam tinggi tutup, tepat di atas gembok
-  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.05, 10, 28, Math.PI), M.leatherDark);
+  const handleGeo = new THREE.TorusGeometry(0.34, 0.05, 10, 28, Math.PI);
+  worldUV(handleGeo);
+  const handle = new THREE.Mesh(handleGeo, M.leatherDark);
   handle.position.set(0, HL - 0.1, D + 0.03);   // dicerminkan atas-bawah: lengkung ∪ menggantung dari sisi atas muka tutup
   handle.rotation.z = Math.PI;
   handle.castShadow = true;
@@ -2155,6 +2161,89 @@ function buildPartModel(id, cfg) {
 }
 
 /* ---------------- Tekstur kanvas ---------------- */
+// UV kotak (box-projection) dalam satuan model: tiap sisi memakai sumbu dominan normalnya, sehingga
+// butiran kulit tidak melar di sisi yang tipis. Offset acak per mesh agar pola tidak terlihat berulang.
+const LEATHER_TILE = 1.6;   // satuan model per ulangan tekstur
+function worldUV(geo) {
+  const p = geo.attributes.position, n = geo.attributes.normal, uv = geo.attributes.uv;
+  const ox = Math.random(), oy = Math.random();
+  for (let i = 0; i < p.count; i++) {
+    const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i));
+    let u, v;
+    if (ax >= ay && ax >= az) { u = p.getZ(i); v = p.getY(i); }
+    else if (ay >= az) { u = p.getX(i); v = p.getZ(i); }
+    else { u = p.getX(i); v = p.getY(i); }
+    uv.setXY(i, u / LEATHER_TILE + ox, v / LEATHER_TILE + oy);
+  }
+  uv.needsUpdate = true;
+}
+
+// Kulit usang sederhana: butiran halus, lipatan, goresan/gosokan pucat & noda gelap. Seamless (digambar dengan wrap).
+function wornLeatherMaps(seed) {
+  const S = 512;
+  let s = seed * 9301 + 49297;
+  const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  const mk = () => { const c = document.createElement('canvas'); c.width = c.height = S; return c; };
+  const col = mk(), g = col.getContext('2d');
+  const wrap = (fn, r) => { for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+    // hanya gambar salinan yang menyentuh kanvas
+    fn(dx, dy);
+  } };
+  g.fillStyle = '#d9d9d9'; g.fillRect(0, 0, S, S);
+  // noda gelap lembut (kulit menua tak merata)
+  for (let i = 0; i < 26; i++) {
+    const x = rnd() * S, y = rnd() * S, r = 40 + rnd() * 90;
+    wrap((dx, dy) => {
+      const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+      gr.addColorStop(0, 'rgba(60,40,25,0.22)'); gr.addColorStop(1, 'rgba(60,40,25,0)');
+      g.fillStyle = gr; g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+    });
+  }
+  // butiran: bintik gelap & terang kecil
+  for (let i = 0; i < 9000; i++) {
+    const x = rnd() * S, y = rnd() * S, r = 0.6 + rnd() * 1.4;
+    g.fillStyle = rnd() < 0.6 ? 'rgba(40,25,15,0.20)' : 'rgba(255,240,220,0.14)';
+    wrap((dx, dy) => { g.beginPath(); g.arc(x + dx, y + dy, r, 0, 7); g.fill(); });
+  }
+  // lipatan / retak halus
+  g.lineCap = 'round';
+  for (let i = 0; i < 38; i++) {
+    let x = rnd() * S, y = rnd() * S, a = rnd() * Math.PI * 2;
+    const len = 30 + rnd() * 70;
+    const pts = [[x, y]];
+    for (let k = 0; k < 6; k++) { a += (rnd() - 0.5) * 0.9; x += Math.cos(a) * len / 6; y += Math.sin(a) * len / 6; pts.push([x, y]); }
+    wrap((dx, dy) => {
+      g.strokeStyle = 'rgba(30,18,10,0.35)'; g.lineWidth = 1.1;
+      g.beginPath(); pts.forEach(([px, py], j) => (j ? g.lineTo(px + dx, py + dy) : g.moveTo(px + dx, py + dy))); g.stroke();
+      g.strokeStyle = 'rgba(255,235,205,0.18)'; g.lineWidth = 0.9;
+      g.beginPath(); pts.forEach(([px, py], j) => (j ? g.lineTo(px + dx + 1, py + dy + 1) : g.moveTo(px + dx + 1, py + dy + 1))); g.stroke();
+    });
+  }
+  // gosokan pucat (cat kulit terkelupas): bercak terang memanjang
+  for (let i = 0; i < 16; i++) {
+    const x = rnd() * S, y = rnd() * S, rx = 25 + rnd() * 55, ry = 6 + rnd() * 16, rot = rnd() * Math.PI;
+    wrap((dx, dy) => {
+      g.save(); g.translate(x + dx, y + dy); g.rotate(rot); g.scale(1, ry / rx);
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+      gr.addColorStop(0, 'rgba(255,238,210,0.40)'); gr.addColorStop(1, 'rgba(255,238,210,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rx, 0, 7); g.fill(); g.restore();
+    });
+  }
+  // goresan tipis terang
+  for (let i = 0; i < 22; i++) {
+    const x = rnd() * S, y = rnd() * S, a = rnd() * Math.PI, len = 15 + rnd() * 45;
+    wrap((dx, dy) => {
+      g.strokeStyle = 'rgba(255,240,215,0.45)'; g.lineWidth = 0.8 + rnd() * 0.8;
+      g.beginPath(); g.moveTo(x + dx, y + dy); g.lineTo(x + dx + Math.cos(a) * len, y + dy + Math.sin(a) * len); g.stroke();
+    });
+  }
+  const map = new THREE.CanvasTexture(col);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const bump = new THREE.CanvasTexture(col);   // bump dari kanvas yang sama: lipatan & butiran ikut timbul
+  for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; }
+  return { map, bumpMap: bump, bumpScale: 0.6 };
+}
+
 function gradientTexture(top, bottom) {
   const c = document.createElement('canvas');
   c.width = 4; c.height = 256;

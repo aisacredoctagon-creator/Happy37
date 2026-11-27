@@ -289,14 +289,6 @@ function markerTexture() {
   });
 }
 
-function glowRectTexture() {
-  return canvasTex(512, 384, (g, w, h) => {
-    g.shadowColor = '#ffcf6b'; g.shadowBlur = 30;
-    g.strokeStyle = '#ffd98a'; g.lineWidth = 12;
-    g.beginPath(); g.roundRect(46, 46, w - 92, h - 92, 40); g.stroke();
-  });
-}
-
 function dotTexture() {
   return canvasTex(64, 64, (g) => {
     const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -620,17 +612,43 @@ function buildGrandfather(anim, faceTex) {
   const g = new THREE.Group();
   put(g, box(0.64, 0.46, 0.42, M.walnut), 0, 0.23, 0);
   put(g, box(0.54, 0.08, 0.36, M.mahogany), 0, 0.5, 0);
-  put(g, box(0.46, 1.5, 0.32, M.mahogany), 0, 1.29, 0);
-  put(g, box(0.32, 1.06, 0.02, M.darkGlass), 0, 1.22, 0.165);
+  // badan jam: rongga kosong (bukan kotak padat) — dinding samping, papan belakang, bingkai depan dengan pintu kaca
+  const inner = std(0x7a5430, { roughness: 0.85, emissive: 0x4a2c12, emissiveIntensity: 0.55 });   // papan belakang hangat, agar siluet bandul terbaca
+  const shell = (w, h, d, x, y, z, mat = M.mahogany) => put(g, box(w, h, d, mat), x, y, z);
+  shell(0.03, 1.5, 0.32, -0.215, 1.29, 0);                // dinding kiri
+  shell(0.03, 1.5, 0.32, 0.215, 1.29, 0);                 // dinding kanan
+  shell(0.46, 1.5, 0.02, 0, 1.29, -0.15, inner);          // papan belakang (sisi dalam)
+  shell(0.045, 1.5, 0.03, -0.1875, 1.29, 0.145);          // tiang pintu kiri
+  shell(0.045, 1.5, 0.03, 0.1875, 1.29, 0.145);           // tiang pintu kanan
+  shell(0.46, 0.14, 0.03, 0, 0.61, 0.145);                // palang bawah
+  shell(0.46, 0.27, 0.03, 0, 1.905, 0.145);               // palang atas
+  shell(0.4, 0.02, 0.3, 0, 0.55, 0, M.walnutDark);        // lantai rongga
+  shell(0.4, 0.02, 0.3, 0, 2.03, 0, M.walnutDark);        // langit-langit rongga
+  put(g, box(0.34, 1.08, 0.008, M.glass, { cast: false, recv: false }), 0, 1.225, 0.162);   // kaca pintu
   for (const [w, h, x, y] of [[0.36, 0.025, 0, 1.76], [0.36, 0.025, 0, 0.69], [0.025, 1.1, -0.17, 1.22], [0.025, 1.1, 0.17, 1.22]]) {
     put(g, box(w, h, 0.02, M.brass), x, y, 0.172);
   }
+  // mekanik di dalam: jangkar + pegas gantung, dua pemberat berantai, bandul berayun
+  const mov = new THREE.Group();
+  put(g, mov, 0, 0, 0);
+  put(mov, box(0.2, 0.05, 0.03, M.brass), 0, 1.84, -0.1);                       // pelat penahan
+  put(mov, mesh(new THREE.TorusGeometry(0.045, 0.008, 8, 20, Math.PI), M.brass), 0, 1.8, -0.06).rotation.z = Math.PI;   // jangkar
+  for (const sx of [-1, 1]) {
+    const wx = sx * 0.12;
+    put(mov, mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.2, 6), M.steel), wx, 1.66, -0.04);                    // rantai
+    put(mov, mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.22, 20), M.brass), wx, 1.45, -0.04);                  // pemberat
+    put(mov, mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.014, 20), M.gilt), wx, 1.565, -0.04);                   // tutup pemberat
+    put(mov, mesh(new THREE.SphereGeometry(0.016, 10, 8), M.brass), wx, 1.33, -0.04);                              // kait bawah
+  }
   const pend = new THREE.Group();
-  put(g, pend, 0, 1.7, 0.1);
-  put(pend, box(0.012, 0.62, 0.012, M.brass), 0, -0.31, 0);
-  const bob = put(pend, mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.016, 28), M.brass), 0, -0.64, 0);
+  put(g, pend, 0, 1.76, 0);
+  put(pend, box(0.012, 0.62, 0.012, M.brass), 0, -0.31, 0);                     // batang
+  put(pend, box(0.05, 0.012, 0.014, M.brass), 0, -0.02, 0);                     // garpu penggerak
+  const bob = put(pend, mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.016, 28), M.brass), 0, -0.66, 0);
   bob.rotation.x = Math.PI / 2;
-  anim.push((t) => { pend.rotation.z = Math.sin(t * Math.PI) * 0.22; });
+  put(pend, mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.02, 20), M.gilt), 0, -0.66, 0).rotation.x = Math.PI / 2;     // boss tengah bandul
+  put(pend, mesh(new THREE.TorusGeometry(0.068, 0.005, 8, 28), M.gilt), 0, -0.66, 0.008);                              // cincin hias
+  anim.push((t) => { pend.rotation.z = Math.sin(t * Math.PI) * 0.15; mov.children[1].rotation.z = Math.PI + Math.sin(t * Math.PI) * 0.15; });
   put(g, box(0.58, 0.68, 0.4, M.mahogany), 0, 2.38, 0);
   put(g, box(0.7, 0.08, 0.46, M.walnut), 0, 2.76, 0);
   put(g, mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 8), M.brass), 0, 2.97, 0).rotation.set(0, 0, 0);
@@ -1064,7 +1082,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     coverMats.push({ m: c, o: c.opacity });
     return c;
   };
-  const brassC = fadeable(M.brass), darkC = fadeable(M.walnutDark), glassC = fadeable(M.glass);
+  const brassC = fadeable(M.brass), glassC = fadeable(M.glass);
   glassC.depthWrite = false;
   {
     const { w: CW, d: CD, base, glass: GH } = CASE;
@@ -1097,8 +1115,10 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
       put(cover, box(0.06, GH, 0.06, brassC), sx * (CW / 2 - 0.03), gy, sz * (CD / 2 - 0.03));
     }
-    put(cover, box(CW + 0.04, 0.06, CD + 0.04, brassC), 0, base + GH + 0.03, 0);
-    put(cover, box(CW - 0.08, 0.025, CD - 0.08, darkC), 0, base + GH + 0.075, 0);
+    // rangka atas kuningan (4 bilah, bagian tengah terbuka — tanpa panel kayu penutup)
+    const FW = 0.07, fy = base + GH + 0.03;
+    for (const sz of [-1, 1]) put(cover, box(CW + 0.04, 0.06, FW, brassC), 0, fy, sz * ((CD + 0.04) / 2 - FW / 2));
+    for (const sx of [-1, 1]) put(cover, box(FW, 0.06, CD + 0.04 - 2 * FW, brassC), sx * ((CW + 0.04) / 2 - FW / 2), fy, 0);
   }
   /** t = 0: tertutup · t = 1: terangkat & hilang. */
   function setCover(t) {
@@ -1205,20 +1225,69 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
   });
 
   /* ---------------- Penanda "ketuk di sini" ---------------- */
-  const markerMat = new THREE.SpriteMaterial({ map: markerTexture(), transparent: true, depthTest: false, depthWrite: false });
-  const marker = new THREE.Sprite(markerMat);
-  marker.scale.set(0.5, 0.5, 1);
-  marker.renderOrder = 20;
-  const markerY = CASE.base + CASE.glass + 0.36;
-  marker.position.set(CASE.x, markerY, CASE.z);
-  scene.add(marker);
+  // Tanpa lingkaran / garis cahaya di sekitar koper: petunjuk "ketuk" = koper itu sendiri yang berpendar lembut
+  // (emissive pada material kulit & kuningan, berdenyut pelan) dan, saat disorot kursor, terangkat + membesar sedikit.
+  const caseFx = { k: 0, hv: 0, pulse: 0 };       // k = kekuatan pendar (0 → 1), hv = animasi hover (0 → 1)
+  const GLOW_COLOR = new THREE.Color(0xffa83c);
+  let caseGlowMats = null;
+  const getCaseGlowMats = () => {
+    // material badan koper (kulit & kuningan) didaftarkan world3d.js di caseRoot.userData.shellMats
+    return (caseGlowMats ??= caseRoot.userData.shellMats ?? []);
+  };
+  // Aura lembut di sekeliling koper: halo di belakangnya (terlihat di sekeliling siluet) + genangan cahaya di atas beludru.
+  // Gradien halus tanpa garis tepi, additif, tidak menulis depth → tertutup koper sendiri.
+  const haloMat = new THREE.SpriteMaterial({
+    map: canvasTex(512, 256, (g) => {
+      g.translate(256, 128); g.scale(1, 0.5);
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 256);
+      gr.addColorStop(0, 'rgba(255,200,110,1)'); gr.addColorStop(0.45, 'rgba(255,175,75,0.85)'); gr.addColorStop(0.75, 'rgba(255,150,50,0.35)'); gr.addColorStop(1, 'rgba(255,140,40,0)');
+      g.fillStyle = gr; g.fillRect(-256, -256, 512, 512);
+    }),
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0,
+  });
+  const halo = new THREE.Sprite(haloMat);
+  halo.position.set(CASE.x, SUITCASE_Y + 0.25, CASE.z - 0.62);   // tepat di belakang koper, masih di dalam etalase (belakang kaca ≈ z −1.9)
+  halo.renderOrder = 3;
+  scene.add(halo);
+  const poolMat = new THREE.MeshBasicMaterial({
+    map: canvasTex(256, 256, (g) => {
+      const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+      gr.addColorStop(0, 'rgba(255,200,110,1)'); gr.addColorStop(0.5, 'rgba(255,165,65,0.6)'); gr.addColorStop(1, 'rgba(255,150,50,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+    }),
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0,
+  });
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 2.6), poolMat);
+  pool.rotation.x = -Math.PI / 2; pool.rotation.z = 0.12;
+  pool.position.set(CASE.x, BED_Y + 0.085, CASE.z);
+  pool.renderOrder = 3;
+  scene.add(pool);
 
-  const glowMat = new THREE.MeshBasicMaterial({ map: glowRectTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 1.9), glowMat);
-  glow.rotation.x = -Math.PI / 2; glow.rotation.z = 0.12;
-  glow.position.set(CASE.x, BED_Y + 0.085, CASE.z);
-  glow.renderOrder = 3;
-  scene.add(glow);
+  function applyCaseFx() {
+    const e = caseFx.k * (0.04 + caseFx.pulse * 0.07 + caseFx.hv * 0.14);
+    for (const m of getCaseGlowMats()) { m.emissive.copy(GLOW_COLOR); m.emissiveIntensity = e; }
+    haloMat.opacity = Math.min(1, caseFx.k * (0.7 + caseFx.pulse * 0.25 + caseFx.hv * 0.3));
+    poolMat.opacity = Math.min(1, caseFx.k * (0.7 + caseFx.pulse * 0.2 + caseFx.hv * 0.3));
+    const hs = 1 + caseFx.pulse * 0.04 + caseFx.hv * 0.1;
+    halo.scale.set(4.2 * hs, 2.2 * hs, 1);
+    // hover: koper terangkat sedikit & membesar (kembali ke 0 saat dibuka / ditinggalkan)
+    caseRoot.position.y = SUITCASE_Y + caseFx.hv * 0.05;
+    caseRoot.scale.setScalar(CASE_SCALE * (1 + caseFx.hv * 0.045));
+  }
+  function resetCaseFx() {
+    gsap.killTweensOf(caseFx);
+    caseFx.k = 0; caseFx.hv = 0; caseFx.pulse = 0;
+    hoverCase = false;
+    for (const m of getCaseGlowMats()) { m.emissive.setRGB(0, 0, 0); m.emissiveIntensity = 1; }
+    caseRoot.position.y = SUITCASE_Y;
+    caseRoot.scale.setScalar(CASE_SCALE);
+    haloMat.opacity = 0; poolMat.opacity = 0;
+  }
+  function setCaseHover(on) {
+    if (on === hoverCase) return;
+    hoverCase = on;
+    gsap.to(caseFx, { hv: on ? 1 : 0, duration: on ? 0.35 : 0.45, ease: on ? 'back.out(2.2)' : 'power2.out', onUpdate: applyCaseFx });
+  }
 
   /* ---------------- Kamera ---------------- */
   function computeView(name) {
@@ -1403,7 +1472,8 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     runId++;
     camTween?.kill(); camTween = null;
     walkTween?.kill(); walkTween = null;
-    gsap.killTweensOf([actorState, markerMat, glowMat, fx]);
+    gsap.killTweensOf([actorState, fx]);
+    resetCaseFx();
     tvReset();
     killActor();
     state = 'off';
@@ -1418,7 +1488,6 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     walkPath = { from: WALK_FROM, to: WALK_TO };
     fx.cover = 0; fx.light = 0; applyFx();
     actorState.u = 0; actorState.fade = 1; actorState.walking = false;
-    markerMat.opacity = 0; glowMat.opacity = 0;
     ui.hint(null); ui.counter(null);
     spawnActor();
     setView('wide');
@@ -1437,7 +1506,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     await new Promise((r) => setTimeout(r, 450));
     if (my !== runId) return;
     state = 'ready';
-    gsap.to(markerMat, { opacity: 1, duration: 0.5 });
+    gsap.to(caseFx, { k: 1, duration: 0.8, onUpdate: applyCaseFx });
     ui.hint('Ketuk koper di etalase');
     // satu gestur: menunjuk koper setelah jeda (hanya kalau koper belum diketuk)
     sleep(GESTURE_TIMING.lead).then(() => { if (my === runId && state === 'ready') actor?.gesture('pointCase'); });
@@ -1453,8 +1522,9 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
       fade: 0, duration: 0.7, delay: 0.25,
       onComplete: () => { if (state === 'handoff') { killActor(); state = 'off'; } },
     });
-    gsap.to(markerMat, { opacity: 0, duration: 0.3 });
-    gsap.to(glowMat, { opacity: 0, duration: 0.3 });
+    hoverCase = false;
+    gsap.killTweensOf(caseFx);
+    gsap.to(caseFx, { k: 0, hv: 0, duration: 0.3, onUpdate: applyCaseFx });
     camTween?.kill(); camTween = null;
     loadTVContent();                    // preload video TV sejak koper diketuk (jauh sebelum scene 12)
     gsap.to(fx, { cover: 1, duration: 1.4, delay: 0.1, ease: 'power2.inOut', onStart: () => sfx('glass_up'), onUpdate: applyFx });
@@ -1466,7 +1536,6 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
   function showCaseMode() {
     leave();
     fx.cover = 1; fx.light = 1; applyFx();
-    markerMat.opacity = 0; glowMat.opacity = 0;
     ui.hint(null);
   }
 
@@ -1622,7 +1691,6 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     ui.hint(null); ui.counter(null);
     walkPath = TV_PATH;
     Object.assign(actorState, { u: at12 ? 1 : 0, fade: 1, walking: false });
-    markerMat.opacity = 0; glowMat.opacity = 0;
     spawnActor({ tv: true });
     loadTVContent();
 
@@ -1677,7 +1745,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     const r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    return ray.intersectObjects([caseRoot, marker], true).length > 0;
+    return ray.intersectObject(caseRoot, true).length > 0;
   }
   const tvTappable = () => false;   // tanpa tombol / ketuk "tonton TV": video diputar otomatis
   function pickTV(e) {
@@ -1693,8 +1761,9 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     tpx = ((e.clientX - r.left) / r.width) * 2 - 1;
     tpy = ((e.clientY - r.top) / r.height) * 2 - 1;
     if (state === 'ready' && e.pointerType === 'mouse') {
-      hoverCase = pickCase(e);
-      canvas.style.cursor = hoverCase ? 'pointer' : 'default';
+      const over = pickCase(e);
+      setCaseHover(over);
+      canvas.style.cursor = over ? 'pointer' : 'default';
     }
   });
   canvas.addEventListener('pointerup', (e) => {
@@ -1740,11 +1809,8 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     placeActor(t);
 
     if (state === 'ready') {
-      const pulse = 0.5 + Math.sin(t * 3) * 0.5;
-      marker.position.y = markerY + Math.sin(t * 2.4) * 0.07;
-      const s = 0.5 + pulse * 0.04 + (hoverCase ? 0.07 : 0);
-      marker.scale.set(s, s, 1);
-      glowMat.opacity = 0.35 + pulse * 0.4 + (hoverCase ? 0.25 : 0);
+      caseFx.pulse = 0.5 + Math.sin(t * 2.6) * 0.5;   // pendar berdenyut pelan di badan koper
+      applyCaseFx();
     }
   }
 
@@ -1757,7 +1823,7 @@ export function createShop({ renderer, canvas, ui, caseRoot, onOpen }) {
     sizeActor();
   }
 
-  if (new URLSearchParams(location.search).has('debug')) window.__shop = { scene, camera, ROOM, free: null };
+  if (new URLSearchParams(location.search).has('debug')) window.__shop = { scene, camera, ROOM, free: null, caseFx, haloMat, poolMat };
 
   /** Dipanggil di dalam klik "Tutup Koper" (gestur pengguna): membuka kunci putar video untuk autoplay bersuara di scene 12. */
   function primeTV() { tvCtl.content?.player?.prime(); }

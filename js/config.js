@@ -21,7 +21,7 @@ export const CONFIG = {
   },
 
   // Kode gembok koper (Scene 5)
-  lockCode: [1, 2, 3, 4],
+  lockCode: [2, 0, 3, 0],
 
   // Minimal derajat putaran kereta sebelum tombol "Tutup" muncul (Scene 10)
   rotateThresholdDeg: 300,
