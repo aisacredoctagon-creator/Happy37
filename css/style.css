@@ -115,6 +115,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: grid; place-items: center; padding: 0; line-height: 1; cursor: pointer;
 }
 .fs-ico { width: 22px; height: 22px; display: block; }
+/* tombol suara: di sebelah kanan tombol layar penuh (44px + jarak 10px) */
+.fs-btn.mute-btn { left: calc(16px + 44px + 10px + env(safe-area-inset-left, 0px)); }
 /* Penjaga orientasi: layar sentuh (HP/tablet) dalam posisi potret → tutup semuanya dengan ajakan memutar layar */
 .rotate-guard {
   display: none;
@@ -132,7 +134,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .rotate-icon { animation: none; } }
 
 .fs-btn.is-on { background: rgba(240, 180, 41, .85); color: #1b130e; }
-.icon-btn.is-muted { opacity: .45; text-decoration: line-through; }
+.icon-btn.is-muted { opacity: .7; }
 
 /* ---------------- HUD ---------------- */
 .hud-top {

@@ -322,11 +322,21 @@ function showError(msg) {
 
 /* ---------------- Audio (musik, ambience, SFX: js/audio.js + js/audio-manifest.js) ---------------- */
 // Tombol mute lama dipakai ulang untuk semua bus audio.
-el.mute.hidden = false;
-el.mute.addEventListener('click', () => {
-  audio.setMuted(!audio.isMuted());
-  el.mute.classList.toggle('is-muted', audio.isMuted());
-});
+// Ikon Lucide "volume-2" (suara nyala) / "volume-off" (mati) — lucide.dev. Tombol berada di sebelah kanan tombol layar penuh.
+{
+  const svg = (paths) => `<svg class="fs-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+  const VOL_ON = svg('<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>');
+  const VOL_OFF = svg('<path d="M16 9a5 5 0 0 1 .95 2.293"/><path d="M19.364 5.636a9 9 0 0 1 1.889 9.96"/><path d="m2 2 20 20"/><path d="m7 7-.587.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298V11"/><path d="M9.828 4.172A.686.686 0 0 1 11 4.657v.686"/>');
+  const syncMute = () => {
+    const m = audio.isMuted();
+    el.mute.classList.toggle('is-muted', m);
+    el.mute.innerHTML = m ? VOL_OFF : VOL_ON;
+    el.mute.setAttribute('aria-label', m ? 'Nyalakan suara' : 'Matikan suara');
+  };
+  el.mute.hidden = false;
+  syncMute();
+  el.mute.addEventListener('click', () => { audio.setMuted(!audio.isMuted()); syncMute(); });
+}
 
 /* ---------------- Layar penuh ---------------- */
 // Tombol layar penuh di pojok kiri atas (juga tombol F). Ikon Lucide "expand" / "shrink" (lucide.dev).
