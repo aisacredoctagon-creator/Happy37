@@ -2,11 +2,13 @@ import { gsap } from 'gsap';
 import { CONFIG } from './config.js';
 import { SCENES_2D } from './scenes2d.js';
 import { h, mediaExists } from './assets.js';
-import { createGasing3D } from './gasing3d.js';
+import { mountScene0 } from './scene0.js';
 import { createDebugPanel } from './debug.js';
+import { audio } from './audio.js';
+import { createAudioIndicator } from './audio-indicator.js';
 
 const TITLES = {
-  1: 'Tiket', 2: 'Di Kereta', 3: 'Surabaya', 4: 'Toko Antik',
+  0: 'Pembuka', 1: 'Tiket', 2: 'Di Kereta', 3: 'Surabaya', 4: 'Toko Antik',
   5: 'Gembok Koper', 6: 'Isi Koper', 7: 'Bagian Kereta', 8: 'Catatan',
   9: 'Kereta Jadi', 10: 'Tutup Koper', 11: 'Bola Tenis', 12: 'Kejutan',
 };
@@ -18,26 +20,22 @@ const el = {
   action: $('actionBtn'), hint: $('hint'), counter: $('counter'),
   note: $('note'), noteTitle: $('noteTitle'), noteBody: $('noteBody'), noteClose: $('noteClose'),
   flash: $('flash'), fader: $('fader'), confetti: $('confetti'),
-  endBar: $('endBar'), endZoom: $('endZoom'), endRestart: $('endRestart'),
+  endBar: $('endBar'), endWatch: $('endWatch'), endRestart: $('endRestart'),
   start: $('start'), startBtn: $('startBtn'), startTitle: $('startTitle'),
   mute: $('muteBtn'), error: $('error'),
 };
 
-/* ---------------- HUD ---------------- */
-el.startTitle.textContent = CONFIG.recipient;
-const startGasing = createGasing3D({ className: 'start-gasing', label: 'Karakter Gasing' });
-$('startGasing').replaceWith(startGasing);
-// Layar awal: Gasing melambai halus, lalu mengulang tiap ±8 detik sampai "Mulai" ditekan (timer di-kill di begin())
-let waveCall = null;
-const wave = () => { startGasing.gesture?.('wave'); waveCall = gsap.delayedCall(8, wave); };
-waveCall = gsap.delayedCall(1.0, wave);
+/* ---------------- Scene 0 (halaman pembuka) ---------------- */
+el.startTitle.textContent = `Sebuah perjalanan kecil untuk ${CONFIG.recipient}`;
+const scene0 = mountScene0(el.start, el.startBtn);
 
-let stage = 0;      // scene yang sedang ditampilkan (1–12), ikut berubah saat alur 3D maju sendiri
+let stage = 0;      // scene yang sedang ditampilkan (0 = pembuka, 1–12), ikut berubah saat alur 3D maju sendiri
 let debugPanel = null;
 
 function setStage(n) {
   stage = n;
   debugPanel?.update(n);
+  audio.setScene(n);          // musik & ambience scene ini (crossfade), SFX pembuka, preload scene berikutnya
 }
 
 // Subtitle/caption dihapus — dibiarkan no-op supaya pemanggil di scene tidak error.
@@ -64,7 +62,8 @@ function showAction(label, fn, opts = {}) {
   gsap.fromTo(el.action, { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(2)', clearProps: 'all' }); // clearProps: sisa style inline GSAP tidak menimpa hover CSS
 }
 function hideAction() { el.action.hidden = true; actionHandler = null; }
-el.action.addEventListener('click', () => { const fn = actionHandler; hideAction(); fn?.(); });
+el.action.addEventListener('click', () => { const fn = actionHandler; audio.sfx('btn_press');   // dipakai tombol "Turun" (scene 2) dan "Tutup Koper" (scene 10)
+  hideAction(); fn?.(); });
 
 const pill = (node) => (text) => {
   node.hidden = !text;
@@ -93,12 +92,14 @@ function openNote(part, { engraved = false } = {}) {
   el.noteTitle.textContent = part.name;
   el.noteBody.replaceChildren(...part.text.map((s) => h('p', {}, s)));
   el.note.hidden = false;
+  if (!engraved) audio.sfx('open_paper');   // surat di scene 10; scene 8 (tulisan terukir) tanpa suara buka/tutup
   gsap.fromTo(el.note.querySelector('.note-paper'), { y: 30, opacity: 0, scale: 0.96 }, { y: 0, opacity: 1, scale: 1, duration: 0.45, ease: 'power2.out' });
   gsap.fromTo(el.note, { opacity: 0 }, { opacity: 1, duration: 0.3 });
   el.noteClose.focus({ preventScroll: true });
   return new Promise((resolve) => {
     const close = () => {
       cancelNote = null;
+      if (!engraved) audio.sfx('close_paper');
       el.noteClose.removeEventListener('click', close);
       window.removeEventListener('keydown', onKey);
       gsap.to(el.note, { opacity: 0, duration: 0.25, onComplete: () => { el.note.hidden = true; resolve(); } });
@@ -117,27 +118,26 @@ function openNote(part, { engraved = false } = {}) {
   });
 }
 
-// Tombol akhir (scene 12 versi 3D): "Perbesar TV" memanggil onZoom() → true kalau sekarang diperbesar
-let endZoomHandler = null;
-function showEnd(onZoom) {
-  endZoomHandler = onZoom;
-  el.endZoom.textContent = '⤢ Perbesar TV';
+// Pop-up tombol akhir (scene 12 versi 3D): hanya muncul setelah video selesai / ditutup. "Putar ulang" memanggil onWatch() (zoom in + putar, lihat shop3d.js & tv-player.js)
+let endWatchHandler = null;
+function showEnd(onWatch, label = '↻ Putar ulang') {
+  endWatchHandler = onWatch;
+  el.endWatch.hidden = !onWatch;
+  el.endWatch.textContent = label;
   el.endBar.hidden = false;
   gsap.killTweensOf(el.endBar);
   gsap.fromTo(el.endBar, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 });
 }
 function hideEnd() {
-  endZoomHandler = null;
+  endWatchHandler = null;
   gsap.killTweensOf(el.endBar);
   el.endBar.hidden = true;
 }
-el.endZoom.addEventListener('click', () => {
-  const zoomed = endZoomHandler?.();
-  el.endZoom.textContent = zoomed ? '⤡ Kecilkan TV' : '⤢ Perbesar TV';
-});
-el.endRestart.addEventListener('click', () => { hideEnd(); goTo(1); });
+el.endWatch.addEventListener('click', () => { audio.sfx('btn_press'); endWatchHandler?.(); });
+el.endRestart.addEventListener('click', () => { audio.sfx('ui_click'); hideEnd(); goTo(1); });
 
 function confetti() {
+  audio.sfx('confetti');
   const colors = ['#e4572e', '#f2b134', '#b4d44e', '#3fa7d6', '#f6efe2', '#d16ba5'];
   const W = window.innerWidth, H = window.innerHeight;
   for (let i = 0; i < 140; i++) {
@@ -216,10 +216,12 @@ async function goTo(n, { fade: fadeColor = 'black', force = false } = {}) {
   const id = ++navId;
   const stale = () => id !== navId;
   if (force) gsap.killTweensOf(el.fader);
+  if (n > 2) audio.sfx('whoosh');   // tanpa whoosh saat masuk scene 1 dan 2
   await fade(1, fadeColor);
   if (stale()) return;
 
-  // bongkar scene lama
+  // bongkar scene lama (termasuk semua suaranya: one-shot, loop event, ambience)
+  audio.stopScene();
   active2d?.exit?.();
   gctx?.revert();
   active2d = null; gctx = null;
@@ -279,18 +281,47 @@ function showError(msg) {
   el.error.hidden = false;
 }
 
-/* ---------------- Musik ---------------- */
-let bgm = null;
-async function setupMusic() {
-  if (!(await mediaExists(CONFIG.assets.bgm))) return;
-  bgm = new Audio(CONFIG.assets.bgm);
-  bgm.loop = true;
-  bgm.volume = 0.5;
-  el.mute.hidden = false;
-  el.mute.addEventListener('click', () => {
-    bgm.muted = !bgm.muted;
-    el.mute.classList.toggle('is-muted', bgm.muted);
-  });
+/* ---------------- Audio (musik, ambience, SFX: js/audio.js + js/audio-manifest.js) ---------------- */
+// Tombol mute lama dipakai ulang untuk semua bus audio.
+el.mute.hidden = false;
+el.mute.addEventListener('click', () => {
+  audio.setMuted(!audio.isMuted());
+  el.mute.classList.toggle('is-muted', audio.isMuted());
+});
+
+/* ---------------- Layar penuh ---------------- */
+// Tombol ⛶ di pojok kanan atas (juga tombol F). Disembunyikan kalau browser tak mendukung (mis. iPhone Safari).
+{
+  const fsBtn = $('fsBtn'), root = document.documentElement;
+  const request = root.requestFullscreen ?? root.webkitRequestFullscreen;
+  const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
+  const isFs = () => !!(document.fullscreenElement ?? document.webkitFullscreenElement);
+  if (fsBtn && request && document.fullscreenEnabled !== false) {
+    fsBtn.hidden = false;
+    const toggle = () => { try { (isFs() ? exit.call(document) : request.call(root))?.catch?.(() => {}); } catch { /* diabaikan */ } };
+    const sync = () => {
+      fsBtn.classList.toggle('is-on', isFs());
+      fsBtn.textContent = isFs() ? '✕' : '⛶';
+      fsBtn.setAttribute('aria-label', isFs() ? 'Keluar layar penuh' : 'Layar penuh');
+    };
+    // Situs ini hanya untuk mode mendatar: di layar sentuh, begitu masuk layar penuh kunci orientasi ke landscape
+    // (Android Chrome; iPhone Safari tidak mendukung → di sana penjaga orientasi (.rotate-guard) yang menutup layar potret)
+    const lockLandscape = () => {
+      if (!matchMedia('(pointer: coarse)').matches) return;
+      if (isFs()) screen.orientation?.lock?.('landscape')?.catch?.(() => {});
+      else screen.orientation?.unlock?.();
+    };
+    fsBtn.addEventListener('click', toggle);
+    document.addEventListener('fullscreenchange', () => { sync(); lockLandscape(); });
+    document.addEventListener('webkitfullscreenchange', () => { sync(); lockLandscape(); });
+    // di HP: tombol "Mulai Perjalanan" sekaligus masuk layar penuh + kunci landscape (butuh sentuhan pengguna)
+    if (matchMedia('(pointer: coarse)').matches) {
+      $('startBtn')?.addEventListener('click', () => { if (!isFs()) toggle(); });
+    }
+    addEventListener('keydown', (e) => {
+      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) toggle();
+    });
+  }
 }
 
 /* ---------------- Jeda otomatis saat tab / aplikasi tidak aktif ---------------- */
@@ -314,18 +345,26 @@ document.addEventListener('visibilitychange', () => {
 /* ---------------- Start ---------------- */
 const params = new URLSearchParams(location.search);
 const startScene = Math.min(TOTAL, Math.max(1, parseInt(params.get('scene') ?? '1', 10) || 1));
-const musicReady = setupMusic();
 
 let started = false;
+// Dunia 3D dimuat saat scene 0 sudah diam (Gasing sudah turun, tombol tampil), bukan saat tombol diklik
+const preloadWorld = () => getWorld().catch((err) => console.warn('3D preload gagal:', err));
+let preloadTimer = setTimeout(preloadWorld, 20000);   // cadangan kalau intro tak pernah selesai
+scene0.introDone.then(() => {
+  if (started) return;
+  clearTimeout(preloadTimer);
+  preloadTimer = setTimeout(() => ('requestIdleCallback' in window ? requestIdleCallback(preloadWorld, { timeout: 2000 }) : preloadWorld()), 1200);
+});
 async function begin(n) {
   if (started) return;
   started = true;
-  waveCall?.kill(); waveCall = null;
+  audio.unlock().then(() => audio.sfx('btn_press'));   // klik "Mulai Perjalanan"; harus di dalam gestur (aturan autoplay iOS)
   el.startBtn.disabled = true;
-  getWorld().catch((err) => console.warn('3D preload gagal:', err)); // preload selama scene 2D
-  await musicReady;
-  bgm?.play().catch(() => {});
-  gsap.to(el.start, { opacity: 0, duration: 0.5, onComplete: () => el.start.remove() });
+  clearTimeout(preloadTimer);   // jangan memuat dunia 3D saat Gasing sedang berjalan masuk: main thread terkunci ±0,7 dtk → animasi macet
+  const entering = scene0.enter();   // Gasing berbalik & berjalan masuk stasiun
+  await entering;
+  preloadWorld();   // kalau belum termuat saat scene 0 diam, muat sekarang (selama scene 2D)
+  gsap.to(el.start, { opacity: 0, duration: 0.5, onComplete: () => { scene0.destroy(); el.start.remove(); } });
   goTo(n);
 }
 el.startBtn.addEventListener('click', () => begin(startScene));
@@ -335,10 +374,17 @@ if (params.has('debug')) {
   gsap.ticker.lagSmoothing(0); // animasi tetap normal di tab latar
 
   const debugJump = (n, { force = false } = {}) => {
-    n = Math.min(TOTAL, Math.max(1, n));
+    n = Math.min(TOTAL, Math.max(0, n));
+    const url = new URL(location.href);
+    if (n === 0) {
+      // scene 0 = halaman pembuka: hanya ada sebelum perjalanan dimulai → muat ulang tanpa ?scene
+      if (!started && !force) return;
+      url.searchParams.delete('scene');
+      location.href = url;
+      return;
+    }
     if (!started) return begin(n);
     if (n === stage && !force) return;
-    const url = new URL(location.href);
     url.searchParams.set('scene', n);          // reload tetap di scene ini
     history.replaceState(null, '', url);
     goTo(n, { force: true });
@@ -350,8 +396,6 @@ if (params.has('debug')) {
     onSkipFadeChange: (v) => { skipFade = v; },
   });
   debugPanel.update(stage);
+  createAudioIndicator({ getScene: () => stage, titles: TITLES });   // nama file audio aktif (hanya ?debug)
   window.__debug = { jump: debugJump, get scene() { return stage; } };
 }
-
-gsap.from('.start > *', { y: 24, opacity: 0, duration: 0.7, stagger: 0.1, ease: 'power2.out' });
-gsap.to('.start-gasing', { rotate: 6, y: -8, duration: 1.4, yoyo: true, repeat: -1, ease: 'sine.inOut' });

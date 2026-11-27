@@ -20,6 +20,7 @@
 import { CONFIG } from './config.js';
 import { slot } from './assets.js';
 import { buildBagModel, BAG_DIMS } from './bag3d.js';
+import { sfx } from './audio.js';
 
 /* ------------------------------------------------------------
    PROPORSI & UKURAN (acuan: foto referensi). Ubah di sini saja — semua turunan dihitung dari konstanta ini.
@@ -873,7 +874,7 @@ function mount(THREE, el, yaw, withBag = false, bagSide = 0) {
     return { cs, blocked: false };
   }
   // State karakter (setState): 'idle' | 'walk' | 'eat' → menentukan gerak sarung tangan
-  let stateName = 'idle', wWalk = 0, wEat = 0, eatT = 0;
+  let stateName = 'idle', wWalk = 0, wEat = 0, eatT = 0, prevEu = 0, spoonFlip = false;
   // arah hadap: heading (rad, 0 = menghadap kamera, + = ke kanan layar). Mulai dari yaw awal (gaya), lalu mengikuti gerak.
   let heading = yaw, headingT = yaw, mvR = 0, mvT = 0, mvAt = -10, moveSpd = 0, speedK = 1;
   const wrapPI = (a) => a - Math.PI * 2 * Math.floor((a + Math.PI) / (Math.PI * 2));
@@ -1168,7 +1169,7 @@ function mount(THREE, el, yaw, withBag = false, bagSide = 0) {
   const hop = () => {
     if (disposed) return;
     const t = nowS();
-    if (t - hopStart > 0.75) { hopStart = t; wobble(); }
+    if (t - hopStart > 0.75) { hopStart = t; wobble(); if (el.isConnected) sfx('hop'); }   // bunyi tepat saat loncatan benar-benar dimulai
   };
 
   // ---- Mesin gestur: ga = gestur aktif, gb = gestur yang sedang memudar (diinterupsi), gf = fidget idle.
@@ -1265,7 +1266,8 @@ function mount(THREE, el, yaw, withBag = false, bagSide = 0) {
   let lastNow = null;
   let nextBlink = 1.2 + Math.random() * 1.5, blinkAt = -1;
   const look = new V3(), local = new V3();
-  const lookDir = camera.position.clone().sub(TARGET).normalize();
+  // arah ke penonton: dari HOME_DIR (tetap), BUKAN camera.position — resize() melewati pengaturan kamera bila elemen belum berukuran saat mount (mata salah arah)
+  const lookDir = HOME_DIR.clone();
   const phase = Math.random() * 6; // supaya dua gasing tidak bergerak kompak
   let first = true;
 
@@ -1330,6 +1332,13 @@ function mount(THREE, el, yaw, withBag = false, bagSide = 0) {
     const eatGo = stateName === 'eat' && (!carry || carry.phase === 'down');
     if (eatGo) eatT += dt; else if (stateName !== 'eat') eatT = 0;
     const eu = (eatT % EAT_T) / EAT_T;
+    // SFX makan, disinkronkan dengan fase koreografi: sendok menyendok di mangkuk (u ≈ 0.04) · sendok sampai di mulut (u ≈ 0.55)
+    if (eatGo && el.isConnected) {
+      const pu = prevEu;
+      if (pu < 0.04 && eu >= 0.04) sfx(spoonFlip ? 'spoon_a' : 'spoon_b'), (spoonFlip = !spoonFlip);
+      if (pu < 0.55 && eu >= 0.55) sfx('nom');
+    }
+    prevEu = eatGo ? eu : 0;
     mouthA.getWorldPosition(mouthW);               // titik mulut DUNIA (ikut tilt badan, yaw, dan loncatan)
     const mB = handRig.worldToLocal(_mB.copy(mouthW)).sub(root.position);   // titik mulut di kerangka rig tangan (ikut arah hadap)
     _mS.copy(mB); _mS.x *= -BOWL_SIDE;               // titik mulut di kerangka (RF) tangan sendok

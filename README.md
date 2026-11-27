@@ -65,8 +65,10 @@ Cukup taruh file dengan nama berikut — website otomatis memakainya. Yang belum
 | `assets/characters/gasing.png` | Karakter 2D lama. Sekarang hanya **cadangan** kalau WebGL gagal + ikon tab |
 | `assets/scene1/Sky.png` | Langit biru (2168×725), lapisan paling belakang scene 1 |
 | `assets/scene1/cloud-1.png` … `cloud-3.png` | Awan transparan yang melayang pelan ke kanan di belakang stasiun (jumlah/ukuran/kecepatan diatur di `scene1()` · `js/scenes2d.js`) |
-| `assets/scene1/bg-stasiun4.png` | Peron stasiun (2170×725), langit transparan (alpha asli), lapisan paling depan |
-| `assets/scene1/bg-stasiun2.png` / `bg-stasiun.jpg` | Background stasiun versi lama (tidak dipakai lagi) |
+| `assets/scene1/bg-stasiun5.webp` | Peron stasiun (2000×668), langit transparan (alpha asli), lapisan paling depan |
+| `assets/scene1/signage-blank.png` | Panel papan digital kosong (1354×164); menutupi tulisan yang terpanggang di latar, teks LED-nya HTML/CSS (`.s1-signage` di `css/style.css`) |
+| `assets/scene1/signage-full.png` | Referensi: papan digital lengkap dengan tulisan (tidak dimuat di web) |
+| `assets/scene1/bg-stasiun4.png` / `bg-stasiun2.png` / `bg-stasiun.jpg` | Background stasiun versi lama (tidak dipakai lagi) |
 | `assets/scene2/parallax/*.png` | **Sprite parallax** pemandangan Surabaya dari jendela kereta (gedung, landmark Suro & Boyo / Tugu Pahlawan / gedung merah, pepohonan, tembok, rel, kabel & tiang). Hasil bedah aset dari Figma; semuanya PNG transparan |
 | `assets/scene2/train-inside.png` | Interior gerbong (1671×941) dengan jendela transparan; parallax Surabaya tampil di belakangnya |
 | `assets/scene3/bg-jalan-surabaya.jpg` | Background jalan/gang — hanya versi 2D cadangan (scene 3 3D dibangun prosedural) |
@@ -79,7 +81,7 @@ Cukup taruh file dengan nama berikut — website otomatis memakainya. Yang belum
 | `assets/scene5/bg-3d.jpg` | Background di belakang scene 3D (opsional) |
 | `assets/scene11/bg-toko-antik.jpg` | Background scene bola & TV — hanya versi 2D cadangan (scene 11–12 3D memakai toko prosedural) |
 | `assets/scene12/video-ulang-tahun.mp4` | **Video ucapan** yang diputar di layar TV CRT 3D (rasio bebas; dipotong "cover" ke layar 4:3). Belum ada → layar placeholder |
-| `assets/audio/bgm.mp3` | Musik latar (opsional; tombol ♪ muncul otomatis) |
+| `assets/audio/` (`music/`, `amb/`, `sfx/`) | **Musik, ambience & SFX** (CC0). Semua path/volume/loop di `js/audio-manifest.js`; daftar lengkap & cara mengganti di **AUDIO.md**, kredit di `assets/audio/CREDITS.md`. Tombol 🔇 membisukan semua |
 
 Model 3D (koper & bagian kereta) saat ini masih primitif Three.js — lihat `buildPartModel()` di `js/world3d.js` untuk menggantinya dengan model GLB nanti.
 

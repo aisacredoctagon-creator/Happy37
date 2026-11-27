@@ -3,10 +3,59 @@
 //  Aktif hanya kalau URL memakai ?debug (mis. http://localhost:5173/?debug)
 //    [  /  ]   scene sebelumnya / berikutnya
 //    `         sembunyikan / tampilkan panel
-//  Panel juga bisa dipakai di HP (tombol ◀ ▶ dan grid 1–12).
+//  Panel juga bisa dipakai di HP (tombol ◀ ▶ dan grid 0–12; 0 = halaman pembuka).
 // ============================================================
 import { h } from './assets.js';
 import { GESTURE_NAMES, getGasingEls, THUMB_SOTO } from './gasing3d.js';
+import { audio } from './audio.js';
+import { BUBBLE_OFFSET } from './street3d.js';
+import { SOUNDS } from './audio-manifest.js';
+
+// Alat uji audio di panel debug: tombol putar tiap suara + slider volume per bus. false = sembunyikan.
+const AUDIO_TOOLS = true;
+
+/** Panel audio: slider bus (master/music/ambience/sfx) + tombol putar per id (loop diputar 3 detik). */
+function audioTools() {
+  const note = h('small', { class: 'dbg-audio-note' }, 'Audio aktif setelah tombol Mulai / loncat scene.');
+  const rows = ['master', 'music', 'ambience', 'sfx'].map((b) => {
+    const val = h('span', { class: 'dbg-thumb-val' }, String(audio.getBusVolume(b)));
+    const input = h('input', { type: 'range', min: 0, max: 1, step: 0.01, value: audio.getBusVolume(b) });
+    input.addEventListener('input', () => { audio.setBusVolume(b, +input.value); val.textContent = input.value; });
+    return h('label', { class: 'dbg-thumb-row' }, h('span', {}, 'bus ' + b), input, val);
+  });
+  const btns = h('div', { class: 'dbg-grid dbg-grid3' }, ...Object.entries(SOUNDS).map(([id, d]) =>
+    h('button', { class: 'dbg-cell dbg-g', type: 'button', title: d.file + (d.loop ? ' (loop, diputar 3 detik)' : ''), onclick: () => audio.preview(id) }, (d.loop ? '↻ ' : '') + id)));
+  const body = h('div', { class: 'dbg-gest dbg-thumb' }, note, ...rows, btns);
+  const toggle = h('button', { class: 'dbg-btn dbg-wide', type: 'button', onclick: () => body.classList.toggle('is-open') }, '🔊 audio');
+  audio.onChange(() => { note.hidden = audio.isReady(); });
+  return [toggle, body];
+}
+
+// Slider posisi speech bubble scene 3 (X / Y sebagai pecahan lebar / tinggi scene). false = sembunyikan.
+const BUBBLE_TUNER = true;
+
+function bubbleTuner() {
+  const spec = [['x', 'X (kanan +  /  kiri −)', -0.4, 0.4, 0.005], ['y', 'Y (bawah +  /  atas −)', -0.4, 0.4, 0.005]];
+  const text = () => `export const BUBBLE_OFFSET = { x: ${+BUBBLE_OFFSET.x.toFixed(3)}, y: ${+BUBBLE_OFFSET.y.toFixed(3)}, free: ${BUBBLE_OFFSET.free} };`;
+  const out = h('code', { class: 'dbg-thumb-out' }, text());
+  const rows = spec.map(([k, label, min, max, step]) => {
+    const val = h('span', { class: 'dbg-thumb-val' }, String(BUBBLE_OFFSET[k]));
+    const input = h('input', { type: 'range', min, max, step, value: BUBBLE_OFFSET[k] });
+    input.addEventListener('input', () => { BUBBLE_OFFSET[k] = +input.value; val.textContent = input.value; out.textContent = text(); });
+    return h('label', { class: 'dbg-thumb-row' }, h('span', {}, label), input, val);
+  });
+  const free = h('input', { type: 'checkbox' });
+  free.checked = BUBBLE_OFFSET.free;
+  free.addEventListener('change', () => { BUBBLE_OFFSET.free = free.checked; out.textContent = text(); });
+  const reset = h('button', { class: 'dbg-btn dbg-wide', type: 'button', onclick: () => { Object.assign(BUBBLE_OFFSET, { x: -0.06, y: 0.11 }); rows.forEach((r, i) => { const v = BUBBLE_OFFSET[spec[i][0]]; r.querySelector('input').value = v; r.querySelector('.dbg-thumb-val').textContent = String(v); }); out.textContent = text(); } }, '↺ reset');
+  const copy = h('button', { class: 'dbg-btn dbg-wide', type: 'button', onclick: async () => {
+    try { await navigator.clipboard.writeText(text()); copy.textContent = '✓ tersalin'; } catch { copy.textContent = 'pilih & Ctrl+C'; }
+    setTimeout(() => { copy.textContent = '⧉ salin nilai'; }, 1500);
+  } }, '⧉ salin nilai');
+  const body = h('div', { class: 'dbg-gest dbg-thumb' }, ...rows, h('label', { class: 'dbg-fade' }, free, ' abaikan anti-tabrakan'), h('div', { class: 'dbg-row' }, reset, copy), out);
+  const toggle = h('button', { class: 'dbg-btn dbg-wide', type: 'button', onclick: () => body.classList.toggle('is-open') }, '💬 speech bubble');
+  return [toggle, body];
+}
 
 // Kontrol sementara: slider pose jempol tangan mangkuk saat makan soto (scene 3 / tombol "eat"). false = sembunyikan.
 const THUMB_TUNER = true;
@@ -38,10 +87,9 @@ function thumbTuner() {
 }
 
 export function createDebugPanel({ total, titles, getScene, jump, onSkipFadeChange }) {
-  const cells = Array.from({ length: total }, (_, i) => {
-    const n = i + 1;
-    return h('button', { class: 'dbg-cell', type: 'button', title: titles[n], onclick: () => jump(n) }, String(n));
-  });
+  // scene 0 = halaman pembuka, lalu 1–total
+  const cells = Array.from({ length: total + 1 }, (_, n) =>
+    h('button', { class: 'dbg-cell', type: 'button', title: titles[n], onclick: () => jump(n) }, String(n)));
   const title = h('span', { class: 'dbg-title' });
   const prev = h('button', { class: 'dbg-btn', type: 'button', title: 'Scene sebelumnya  [', onclick: () => jump(getScene() - 1) }, '◀');
   const next = h('button', { class: 'dbg-btn', type: 'button', title: 'Scene berikutnya  ]', onclick: () => jump(getScene() + 1) }, '▶');
@@ -67,7 +115,9 @@ export function createDebugPanel({ total, titles, getScene, jump, onSkipFadeChan
       h('div', { class: 'dbg-grid' }, ...cells),
       h('label', { class: 'dbg-check' }, fadeBox, ' lewati fade transisi'),
       gestToggle, gestBody,
-      ...(THUMB_TUNER ? thumbTuner() : [])));
+      ...(THUMB_TUNER ? thumbTuner() : []),
+      ...(BUBBLE_TUNER ? bubbleTuner() : []),
+      ...(AUDIO_TOOLS ? audioTools() : [])));
   document.body.append(root);
 
   window.addEventListener('keydown', (e) => {
@@ -80,9 +130,9 @@ export function createDebugPanel({ total, titles, getScene, jump, onSkipFadeChan
   return {
     /** dipanggil main.js setiap scene/stage berubah */
     update(n) {
-      title.textContent = n ? `Scene ${n} · ${titles[n]}` : 'belum mulai';
-      cells.forEach((c, i) => c.classList.toggle('is-current', i + 1 === n));
-      prev.disabled = n <= 1;
+      title.textContent = `Scene ${n} · ${titles[n]}`;
+      cells.forEach((c, i) => c.classList.toggle('is-current', i === n));
+      prev.disabled = n <= 0;
       next.disabled = n >= total;
     },
   };
