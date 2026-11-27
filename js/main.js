@@ -18,7 +18,7 @@ const $ = (id) => document.getElementById(id);
 const el = {
   gl: $('gl'), stage: $('stage2d'),
   action: $('actionBtn'), hint: $('hint'), counter: $('counter'),
-  note: $('note'), noteTitle: $('noteTitle'), noteBody: $('noteBody'), noteClose: $('noteClose'),
+  note: $('note'), noteTitle: $('noteTitle'), noteTagline: $('noteTagline'), noteBody: $('noteBody'), noteClose: $('noteClose'),
   flash: $('flash'), fader: $('fader'), confetti: $('confetti'),
   endBar: $('endBar'), endWatch: $('endWatch'), endRestart: $('endRestart'),
   start: $('start'), startBtn: $('startBtn'), startTitle: $('startTitle'),
@@ -89,8 +89,13 @@ let cancelNote = null;
 // engraved: tulisan sudah terukir di model 3D (ultra zoom-in) → kertas catatan HTML disembunyikan, hanya tombol ✕ yang tampil
 function openNote(part, { engraved = false } = {}) {
   el.note.classList.toggle('is-engraved', engraved);
-  el.noteTitle.textContent = part.name;
-  el.noteBody.replaceChildren(...part.text.map((s) => h('p', {}, s)));
+  el.noteTitle.textContent = part.division;
+  el.noteTagline.hidden = !part.tagline;
+  el.noteTagline.textContent = part.tagline || '';
+  el.noteBody.replaceChildren(
+    ...part.messages.map((m) => h('div', { class: 'note-msg' }, h('p', { class: 'note-author' }, m.author), h('p', {}, m.text))),
+    ...(part.closing ? [h('div', { class: 'note-msg' }, h('p', {}, part.closing))] : []),
+  );
   el.note.hidden = false;
   if (!engraved) audio.sfx('open_paper');   // surat di scene 10; scene 8 (tulisan terukir) tanpa suara buka/tutup
   gsap.fromTo(el.note.querySelector('.note-paper'), { y: 30, opacity: 0, scale: 0.96 }, { y: 0, opacity: 1, scale: 1, duration: 0.45, ease: 'power2.out' });

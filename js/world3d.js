@@ -24,7 +24,9 @@ const TRAIN_SCALE = 0.85;
 const FLOAT_Y = 1.95;
 // Kartu bagian di tutup koper: sengaja tidak putih bersih (lampu toko + tone mapping membuatnya silau)
 const TILE_COLOR = 0x958a74;
-const PLAQUE_TINT = 0x9e9786;
+// Kartu bagian: alas 1.50 × 0.98, panel perkamen di dalam bingkai kuningan
+const CARD_W = 1.5, CARD_H = 0.98;
+const PANEL_W = 1.33, PANEL_H = 0.81, PANEL_Z = 0.052;
 
 export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   /* ---------------- Renderer / scene / camera ---------------- */
@@ -74,6 +76,10 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     leather: new THREE.MeshStandardMaterial({ color: 0x7a4a2a, roughness: 0.72, envMapIntensity: 0.3 }),
     leatherDark: new THREE.MeshStandardMaterial({ color: 0x5a341d, roughness: 0.8, envMapIntensity: 0.3 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xc9a54a, metalness: 0.85, roughness: 0.32 }),
+    // bingkai kartu bagian (scene 5+): kuningan terang, beludru alas, permata merah
+    brassLight: new THREE.MeshStandardMaterial({ color: 0xd2b25a, metalness: 0.85, roughness: 0.3, envMapIntensity: 0.5 }),
+    velvet: new THREE.MeshStandardMaterial({ color: 0x4a1520, roughness: 1, envMapIntensity: 0.15 }),
+    gem: new THREE.MeshStandardMaterial({ color: 0xa8182c, emissive: 0x3a0610, metalness: 0.2, roughness: 0.15, envMapIntensity: 0.8 }),
     lining: new THREE.MeshStandardMaterial({ color: 0x7d1f2a, roughness: 0.95, envMapIntensity: 0.3 }),
     ghost: new THREE.MeshBasicMaterial({ color: 0x0b0c0f, transparent: true, opacity: 0.55, depthWrite: false }),
     ghostEdge: new THREE.LineBasicMaterial({ color: 0xe8c87a, transparent: true, opacity: 0.55 }),
@@ -279,6 +285,42 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
   }
   setTrainSideways();
 
+  // Bingkai kartu bagian (sederhana): bilah kuningan luar + bibir dalam tipis + blok sudut kecil dengan satu permata.
+  function buildCardFrame() {
+    const g = new THREE.Group();
+    const hw = CARD_W / 2, hh = CARD_H / 2;
+    // alas beludru di belakang panel
+    g.add(at(box(CARD_W, CARD_H, 0.05, M.velvet, 0.03), 0, 0, 0.025));
+
+    // bilah luar – 4 sisi
+    const BW = 0.085, BD = 0.07, bz = 0.05 + BD / 2 - 0.01;
+    g.add(at(box(CARD_W, BW, BD, M.brass, 0.02), 0, hh - BW / 2, bz));
+    g.add(at(box(CARD_W, BW, BD, M.brass, 0.02), 0, -hh + BW / 2, bz));
+    g.add(at(box(BW, CARD_H - 2 * BW, BD, M.brass, 0.02), -hw + BW / 2, 0, bz));
+    g.add(at(box(BW, CARD_H - 2 * BW, BD, M.brass, 0.02), hw - BW / 2, 0, bz));
+
+    // bibir dalam tipis mengelilingi bukaan panel
+    const LW = 0.026, LD = 0.05, lz = 0.05 + LD / 2 - 0.004;
+    const ow = CARD_W - 2 * BW, oh = CARD_H - 2 * BW;
+    g.add(at(box(ow, LW, LD, M.brassLight, 0.008), 0, oh / 2 - LW / 2, lz));
+    g.add(at(box(ow, LW, LD, M.brassLight, 0.008), 0, -oh / 2 + LW / 2, lz));
+    g.add(at(box(LW, oh - 2 * LW, LD, M.brassLight, 0.008), -ow / 2 + LW / 2, 0, lz));
+    g.add(at(box(LW, oh - 2 * LW, LD, M.brassLight, 0.008), ow / 2 - LW / 2, 0, lz));
+
+    // blok sudut kecil + satu permata
+    const CB = 0.13, cz = 0.05 + 0.085 / 2 - 0.004;
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      const x = sx * (hw - CB / 2 + 0.005), y = sy * (hh - CB / 2 + 0.005);
+      g.add(at(box(CB, CB, 0.085, M.brass, 0.03), x, y, cz));
+      const gem = new THREE.Mesh(new THREE.SphereGeometry(0.026, 16, 12), M.gem);
+      gem.scale.z = 0.7;
+      g.add(at(gem, x, y, cz + 0.0425 + 0.006));
+    }
+    g.traverse((o) => { if (o.isMesh) o.userData.fine = true; });
+    return g;
+  }
+
+  const cardPanelTex = cardPanelTexture();
   const tileTargets = [];
   const parts = CONFIG.parts.map((cfg, i) => {
     const model = buildPartModel(cfg.id, cfg);
@@ -316,25 +358,25 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
     const tile = new THREE.Group();
     tile.position.set((col - 1) * 1.55, (1 - row) * 1.02, 0);
     lidInner.add(tile);
-    const tileMat = new THREE.MeshStandardMaterial({ color: TILE_COLOR, roughness: 0.95, emissive: 0xffc46b, emissiveIntensity: 0, envMapIntensity: 0.3 });
-    const card = at(box(1.46, 0.94, 0.04, tileMat, 0.03), 0, 0, 0.02);
-    tile.add(card);
-    const plaque = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.3, 0.28),
-      new THREE.MeshStandardMaterial({ map: plaqueTexture(cfg), color: PLAQUE_TINT, roughness: 0.9, envMapIntensity: 0.3 }));
-    plaque.position.set(0, -0.29, 0.045);
-    tile.add(plaque);
+    // Kartu bertingkat: alas beludru → panel perkamen berornamen (tileMat: menyala saat hover / meredup saat terpasang) → bingkai kuningan.
+    // Tanpa tulisan: nama & kalimat bagian hanya muncul di ukiran badan kereta (scene 8).
+    const tileMat = new THREE.MeshStandardMaterial({ color: TILE_COLOR, map: cardPanelTex, roughness: 0.95, emissive: 0xffc46b, emissiveIntensity: 0, envMapIntensity: 0.3 });
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(PANEL_W, PANEL_H), tileMat);
+    panel.position.set(0, 0, PANEL_Z);
+    panel.receiveShadow = true;
+    tile.add(panel);
+    tile.add(buildCardFrame());
 
-    const s = Math.min(1.25 / size.x, 0.46 / size.y, 0.85);
+    const s = Math.min(1.0 / size.x, 0.54 / size.y, 0.85);
     obj.scale.setScalar(s);
-    obj.position.set(0, 0.13, 0.045 + (size.z * s) / 2);
+    obj.position.set(0, 0, PANEL_Z + 0.004 + (size.z * s) / 2);
     tile.add(obj);
 
     const home = { pos: obj.position.clone(), quat: obj.quaternion.clone(), scale: obj.scale.clone() };
     tile.traverse((o) => { o.userData.part = i; });
     tileTargets.push(tile);
 
-    return { cfg, i, obj, ghost, tile, tileMat, plaque, engrave, center, home, placed: false, glow: { v: 0 }, glowMats: null };
+    return { cfg, i, obj, ghost, tile, tileMat, engrave, center, home, placed: false, glow: { v: 0 }, glowMats: null };
   });
 
   /* ---------------- BUSA BAWAH: nampan berkantong (moulding) ---------------- */
@@ -462,9 +504,9 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
       }
       case 'part2': {
         const p = parts[v.index];
-        target = toLocalPos(p.plaque.getWorldPosition(new THREE.Vector3()));
-        dir = toLocalDir(p.plaque.getWorldDirection(new THREE.Vector3()));
-        w = 1.4; hgt = 0.5; break;
+        target = toLocalPos(p.tile.getWorldPosition(new THREE.Vector3()));
+        dir = toLocalDir(p.tile.getWorldDirection(new THREE.Vector3()));
+        w = 1.6; hgt = 1.05; break;
       }
       case 'engrave': {
         // "Ultra zoom-in": kamera mendekat ke plat kecil di badan bagian kereta sampai tulisan terukirnya memenuhi layar.
@@ -950,7 +992,7 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
       gsap.to(p.obj.position, { y: p.center.y + dy, duration: 0.3, ease: 'back.out(2)' });
       gsap.to(p.obj.scale, { x: s, y: s, z: s, duration: 0.3, ease: 'back.out(2)' });
     }
-    ui.hint(i !== null ? `✉ ${parts[i].cfg.name} — ketuk untuk membaca suratnya` : HINT_TRAIN);
+    ui.hint(i !== null ? `✉ ${parts[i].cfg.division} — ketuk untuk membaca suratnya` : HINT_TRAIN);
   }
   async function openLetter(i) {
     const p = parts[i], e = epoch;
@@ -1087,7 +1129,8 @@ export function createWorld({ canvas, ui, onDone, onShopOpen, onStreetDone }) {
    Ukuran keseluruhan (miniatur) sama seperti sebelumnya. Ganti isi fungsi ini dengan model GLB bila sudah ada.
 ============================================================ */
 // Jarak antar gerbong 0.2: kopling, buffer & peredam sambungan tiap gerbong menjorok ≤ 0.1 sehingga tidak saling bertabrakan
-const CARS = { loco: 1.4, car1: -0.15, car2: -1.7 };
+// Loko: ujung belakangnya menjorok 0.023 melewati −L/2 (panel kuning), jadi digeser +0.023 supaya celah ke gerbong 1 sama (0.2) dengan antar-gerbong
+const CARS = { loco: 1.423, car1: -0.15, car2: -1.7 };
 const L = 1.35;                 // panjang badan (tanpa hidung)
 const NOSE_LEN = 0.3;           // panjang hidung di depan badan loko
 const F = L / 2 + NOSE_LEN;     // ujung depan hidung (f)
@@ -1225,6 +1268,40 @@ function loadVirginLogo() {
     };
     im.onerror = () => resolve(null);
     im.src = CONFIG.assets.train_logo;
+  }));
+}
+
+// Gambar livery sisi lokomotif (assets/train/loco-side.webp, hidung di kanan, latar putih polos) → canvas yang sudah dipotong
+// ke badan dan latar putih di luar siluet (area hidung miring) dijadikan transparan lewat flood-fill dari tepi.
+const LOCO_IMG = { y0: 22, y1: 646 };   // baris gambar yang berisi badan (sisanya margin putih)
+let locoImgPromise = null;
+function loadLocoSideImage() {
+  return (locoImgPromise ??= new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => {
+      try {
+        const w = im.naturalWidth, h = LOCO_IMG.y1 - LOCO_IMG.y0;
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const g = c.getContext('2d', { willReadFrequently: true });
+        g.drawImage(im, 0, LOCO_IMG.y0, w, h, 0, 0, w, h);
+        const d = g.getImageData(0, 0, w, h), px = d.data, seen = new Uint8Array(w * h), stack = [];
+        const bg = (i) => px[i * 4] >= 252 && px[i * 4 + 1] >= 252 && px[i * 4 + 2] >= 252;
+        const push = (x, y) => { const i = y * w + x; if (!seen[i] && bg(i)) { seen[i] = 1; stack.push(i); } };
+        for (let x = 0; x < w; x++) { push(x, 0); push(x, h - 1); }
+        for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
+        while (stack.length) {
+          const i = stack.pop(), x = i % w, y = (i - x) / w;
+          px[i * 4 + 3] = 0;
+          if (x > 0) push(x - 1, y); if (x < w - 1) push(x + 1, y);
+          if (y > 0) push(x, y - 1); if (y < h - 1) push(x, y + 1);
+        }
+        g.putImageData(d, 0, 0);
+        resolve(c);
+      } catch { resolve(null); }
+    };
+    im.onerror = () => resolve(null);
+    im.src = CONFIG.assets.train_loco_side;
   }));
 }
 
@@ -1392,9 +1469,37 @@ function locoSideTexture(dir) {
   g.restore();
   const tx = canvasTex(k.c);
 
+  // Livery dari gambar referensi (assets/train/loco-side.webp): setelah dimuat, menggantikan seluruh livery prosedural di atas
+  // (yang tetap jadi cadangan kalau gambar gagal dimuat). Sisi −z = gambar dibalik; logo & nomor loko dipasang kembali
+  // tidak terbalik di posisi cerminnya supaya tetap terbaca.
+  let replaced = false;
+  loadLocoSideImage().then((img) => {
+    if (!img) return;
+    replaced = true;
+    const kx = k.W / img.width, ky = k.H / img.height;
+    g.clearRect(0, 0, k.W, k.H);
+    g.save();
+    g.beginPath();
+    LOCO_PROFILE.forEach(([f, y], i) => (i ? g.lineTo(k.px(f), k.py(y)) : g.moveTo(k.px(f), k.py(y))));
+    g.closePath(); g.clip();
+    g.fillStyle = '#a30d15'; g.fillRect(0, 0, k.W, k.H);   // alas merah di bawah tepi transparan gambar
+    if (dir > 0) {
+      g.drawImage(img, 0, 0, k.W, k.H);
+    } else {
+      g.save(); g.translate(k.W, 0); g.scale(-1, 1); g.drawImage(img, 0, 0, k.W, k.H); g.restore();
+      // kotak (x, y, lebar, tinggi) dalam piksel gambar asli: logo Virgin; panel perak + nomor 91114
+      for (const [sx, sy0, sw, sh] of [[1190, 205, 350, 295], [1846, 515, 154, 130]]) {
+        const sy = sy0 - LOCO_IMG.y0;
+        g.drawImage(img, sx, sy, sw, sh, (img.width - sx - sw) * kx, sy * ky, sw * kx, sh * ky);
+      }
+    }
+    g.restore();
+    tx.needsUpdate = true;
+  });
+
   // 11) logo Virgin (putih) + ekor goresan yang memanjang ke kiri (seperti di foto) — setelah PNG dimuat
   loadVirginLogo().then((logo) => {
-    if (!logo) return;
+    if (!logo || replaced) return;
     const h = 0.25 * U, w = ((h * logo.width) / logo.height) * 0.82;
     const [cxL, cyL] = I(855, 182);
     const lx = cxL - w / 2, ly = cyL - h / 2;
@@ -1506,69 +1611,158 @@ function coachSideTexture(kind, dir) {
    Tidak ada plat tambahan: judul + 8 kalimat tiap bagian "diukir" ke permukaan bagian itu sendiri (atap, sisi badan, kotak
    peralatan roda). Berupa stiker transparan berisi huruf saja + peta tonjolan (huruf cekung) sehingga tampak terukir di cat / logam.
    Di kartu hanya tampak sebagai goresan halus; di "ultra zoom-in" (scene 8) kamera mendekat sampai huruf-hurufnya terbaca. */
-const ENGRAVE_ASPECT = 1.5;
+const LOCO_PLATE = { fc: -0.21, yc: 0.515 };   // pusat plat tulisan di badan loko (f, y); dipakai juga untuk membaca area putih livery
+const ENGRAVE_ASPECT = 2;   // lebar : tinggi plat. Lebih lebar → baris teks lebih sedikit (tinggi plat tetap, lebar bertambah)
 
 // ink: 'light' = huruf terang (atap gelap / baja gelap) | 'dark' = huruf gelap (cat badan merah yang terang)
-function engraveMaterial(cfg, ink = 'light') {
-  const W = 1536, H = Math.round(W / ENGRAVE_ASPECT);
+function engraveMaterial(cfg, ink = 'light', fit = null) {
+  const W = 2048, H = Math.round(W / ENGRAVE_ASPECT);
   const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
   const colC = mk(), heiC = mk();
   const gc = colC.getContext('2d'), gh = heiC.getContext('2d');
-  gh.fillStyle = '#808080'; gh.fillRect(0, 0, W, H);   // peta tinggi: datar; huruf = cekung (hitam)
 
   // huruf terukir: isian terang + tepi gelap di sisi kiri-atas + kilau tipis di sisi kanan-bawah; bayangan lembut pada peta tinggi
   const carve = (text, x, y, font) => {
     gc.font = font; gh.font = font;
     gc.textBaseline = 'alphabetic'; gh.textBaseline = 'alphabetic';
+    // Kontras tinggi: isian putih murni / hitam pekat + goresan tipis (guratan Cormorant yang halus ditebalkan ≈1,5 px supaya terbaca)
+    gc.lineJoin = 'round'; gc.lineWidth = 1.6;
     if (ink === 'dark') {
-      // huruf hampir hitam, halo tipis (halo putih tebal membuat huruf tampak keruh di atas cat merah)
-      gc.fillStyle = 'rgba(0,0,0,.4)'; gc.fillText(text, x - 2, y - 2);
-      gc.fillStyle = 'rgba(255,255,255,.3)'; gc.fillText(text, x + 2, y + 2);
-      gc.fillStyle = '#0b0203'; gc.fillText(text, x, y);
+      // huruf hitam pekat tanpa halo terang (halo putih membuat huruf tampak keruh / cokelat di atas permukaan terang)
+      gc.fillStyle = gc.strokeStyle = '#000000';
+      gc.fillText(text, x - 1, y - 1);
+      gc.fillText(text, x, y); gc.strokeText(text, x, y);
     } else {
-      gc.fillStyle = 'rgba(15,15,20,.8)'; gc.fillText(text, x - 2.5, y - 2.5);
-      gc.fillStyle = 'rgba(255,255,255,.45)'; gc.fillText(text, x + 2.5, y + 2.5);
-      gc.fillStyle = '#ece9df'; gc.fillText(text, x, y);
+      gc.fillStyle = 'rgba(0,0,0,.9)'; gc.fillText(text, x - 3, y - 3);
+      gc.fillStyle = gc.strokeStyle = '#ffffff';
+      gc.fillText(text, x, y); gc.strokeText(text, x, y);
     }
     gh.shadowColor = '#000'; gh.shadowBlur = 5;
     gh.fillStyle = '#000'; gh.fillText(text, x, y);
     gh.shadowBlur = 0;
   };
-  const MX = 70, maxW = W - 2 * MX;
-  carve(cfg.name, MX, 130, 'bold 80px "Trebuchet MS", "Segoe UI", sans-serif');
-  gc.fillStyle = ink === 'dark' ? '#2b0b0e' : 'rgba(15,15,20,.7)'; gc.fillRect(MX, 160, maxW, 4);
-  gc.fillStyle = 'rgba(255,255,255,.5)'; gc.fillRect(MX, 164, maxW, 3);
-  gh.fillStyle = '#000'; gh.fillRect(MX, 160, maxW, 6);
-  // Isi teks: pakai ukuran huruf terbesar yang masih muat di blok (blok punya sisa ruang → huruf lebih besar = lebih mudah dibaca)
-  let layout = null;
-  for (let size = 54; size >= 32; size -= 2) {
-    const font = `${size}px Georgia, "Times New Roman", serif`;
-    gc.font = font;
-    const lh = Math.round(size * 1.32), gap = Math.round(size * 0.22);   // gap = jeda antar kalimat
-    const rows = [];
-    let y = 250;
-    for (const sentence of cfg.text) {
-      let line = '';
-      for (const word of sentence.split(' ')) {
-        const test = line ? line + ' ' + word : word;
-        if (gc.measureText(test).width > maxW && line) { rows.push([line, y]); y += lh; line = word; }
-        else line = test;
-      }
-      if (line) { rows.push([line, y]); y += lh + gap; }
+  const MX = 60;
+  // Font surat: divisi = Tenor Sans, nama penulis = Cormorant Garamond Bold, isi surat = Cormorant Garamond Regular
+  const F_DIV = (px) => `${px}px "Tenor Sans", "Trebuchet MS", sans-serif`;
+  const F_BODY = (px) => `400 ${px}px "Cormorant Garamond", Georgia, "Times New Roman", serif`;
+  const F_NAME = (px) => `700 ${px}px "Cormorant Garamond", Georgia, "Times New Roman", serif`;
+
+  // Tiap ucapan = nama penulis (Cormorant Bold, baris sendiri) lalu isi surat (Cormorant Regular) di baris-baris di bawahnya.
+  const entries = [
+    ...cfg.messages.map((m) => ({ author: m.author, text: m.text })),
+    ...(cfg.closing ? [{ author: null, text: cfg.closing }] : []),
+  ];
+
+  // Area putih (hanya plat di badan lokomotif, `fit` = posisi & ukuran plat): whiteAt(cx, cy) = apakah titik kanvas ini jatuh di
+  // bidang putih livery. Teks hanya ditata di dalam bidang putih itu supaya huruf tidak melewati warna merah. Tanpa peta → seluruh plat.
+  let whiteAt = null;
+  const PAD = 55;                                // jarak aman dari tepi putih (px kanvas)
+  // rentang mendatar [xl, xr] terpanjang yang seluruhnya putih untuk pita baris y0..y1
+  const span = (y0, y1) => {
+    if (!whiteAt) return [MX, W - MX];
+    const ys = [y0, (y0 + y1) / 2, y1];
+    let best = null, start = -1;
+    for (let x = 0; x <= W; x += 8) {
+      const ok = x < W && ys.every((y) => whiteAt(x, y));
+      if (ok && start < 0) start = x;
+      if (!ok && start >= 0) { if (!best || x - 8 - start > best[1] - best[0]) best = [start, x - 8]; start = -1; }
     }
-    layout = { font, rows };
-    if (y - gap <= H - 50) break;
-  }
-  for (const [text, yy] of layout.rows) carve(text, MX, yy, layout.font);
+    if (!best) return [MX, MX + 160];
+    return [Math.max(MX, best[0] + PAD), Math.min(W - MX, best[1] - PAD)];
+  };
+
+  // Tata letak isi surat untuk ukuran huruf `size`; tiap baris dibungkus sesuai lebar putih yang tersedia di tinggi barisnya.
+  const layout = (size, left) => {
+    const lh = Math.round(size * 1.16), gap = Math.round(size * 0.4);   // gap = jeda antar ucapan
+    const lines = [];                                                    // { segs: [{ text, bold, x }], y }
+    let y = 250;
+    gc.font = F_BODY(size);
+    const space = gc.measureText(' ').width;
+    const rightAt = (yy) => span(yy - size * 0.85, yy + size * 0.28)[1];
+    const place = (segs, para) => { lines.push({ segs, y }); y += lh + (para ? gap : 0); };
+    for (const { author, text } of entries) {
+      if (author) place([{ text: author, bold: true, x: 0 }], false);
+      let line = [], x = 0;
+      for (const w of text.split(/\s+/)) {
+        const ww = gc.measureText(w).width;
+        if (line.length && x + space + ww > rightAt(y) - left) { place(line, false); line = []; x = 0; }
+        if (line.length) x += space;
+        line.push({ text: w, bold: false, x });
+        x += ww;
+      }
+      if (line.length) place(line, true);
+    }
+    return { lines, size };
+  };
+
+  const paint = () => {
+    gc.clearRect(0, 0, W, H);
+    if (ink === 'light') {
+      // alas gelap tembus pandang di belakang huruf terang → kontras tetap tinggi walau permukaan atap/rangka tersorot terang
+      gc.fillStyle = 'rgba(14,9,7,.72)';
+      gc.beginPath(); if (gc.roundRect) gc.roundRect(0, 0, W, H, 36); else gc.rect(0, 0, W, H); gc.fill();
+    }
+    gh.fillStyle = '#808080'; gh.fillRect(0, 0, W, H);   // peta tinggi: datar; huruf = cekung (hitam)
+    // Judul: divisi (kiri) + kata kunci opsional (kanan, lebih kecil) + garis, semuanya di dalam area yang tersedia
+    const hs = span(40, 175), hl = Math.max(MX, hs[0]), hr = Math.min(W - MX, hs[1]), hw = hr - hl;
+    let tagW = 0;
+    if (cfg.tagline) { gc.font = F_DIV(44); tagW = gc.measureText(cfg.tagline).width + 40; }
+    let divSize = 84;
+    for (; divSize > 36; divSize -= 4) { gc.font = F_DIV(divSize); if (gc.measureText(cfg.division).width <= hw - tagW) break; }
+    carve(cfg.division, hl, 130, F_DIV(divSize));
+    if (cfg.tagline) carve(cfg.tagline, hr - (tagW - 40), 128, F_DIV(44));
+    gc.fillStyle = ink === 'dark' ? '#000000' : 'rgba(15,15,20,.7)'; gc.fillRect(hl, 160, hw, 4);
+    if (ink !== 'dark') { gc.fillStyle = 'rgba(255,255,255,.5)'; gc.fillRect(hl, 164, hw, 3); }
+    gh.fillStyle = '#000'; gh.fillRect(hl, 160, hw, 6);
+    // Isi surat: ukuran huruf terbesar yang masih muat (Cormorant bertubuh kecil → mulai besar). Tepi kiri bersama = tepi putih paling
+    // kanan di antara baris-baris yang terpakai (diulang beberapa kali karena tata letak bergantung pada tepi kiri).
+    let left = Math.max(MX, hl), best;
+    for (let pass = 0; pass < 4; pass++) {
+      for (let size = 80; size >= 22; size -= 2) {
+        best = layout(size, left);
+        if (best.lines[best.lines.length - 1].y <= H - 50) break;
+      }
+      if (!whiteAt) break;
+      const need = Math.max(left, ...best.lines.map((l) => span(l.y - best.size * 0.85, l.y + best.size * 0.28)[0]));
+      if (need - left < 4) break;
+      left = need;
+    }
+    for (const { segs, y } of best.lines) {
+      for (const s of segs) carve(s.text, left + s.x, y, s.bold ? F_NAME(best.size) : F_BODY(best.size));
+    }
+  };
+  paint();
 
   const map = new THREE.CanvasTexture(colC);
   map.colorSpace = THREE.SRGBColorSpace;
   map.anisotropy = 8;
   const bump = new THREE.CanvasTexture(heiC);
   bump.anisotropy = 8;
+  // Font web (Google Fonts) belum tentu sudah siap saat bagian dibangun → gambar ulang begitu font termuat
+  if (document.fonts?.load) {
+    Promise.allSettled([
+      document.fonts.load(F_BODY(40)), document.fonts.load(F_NAME(40)), document.fonts.load(F_DIV(40)),
+    ]).then(() => { paint(); map.needsUpdate = true; bump.needsUpdate = true; });
+  }
+  // Badan loko: baca area putih dari tekstur livery (setelah gambar termuat) lalu tata ulang teks di dalamnya
+  if (fit) {
+    loadLocoSideImage().then((img) => {
+      if (!img) return;
+      const data = img.getContext('2d').getImageData(0, 0, img.width, img.height).data;
+      const f0 = -L / 2, f1 = F;                     // rentang f yang dipetakan ke lebar tekstur (lihat locoSideTexture)
+      whiteAt = (cx, cy) => {
+        const f = fit.fc + (cx / W - 0.5) * fit.w, yy = fit.yc + (0.5 - cy / H) * fit.h;   // titik kanvas plat → koordinat badan
+        const ix = Math.round(((f - f0) / (f1 - f0)) * (img.width - 1)), iy = Math.round(((TOP - yy) / (TOP - FLOOR)) * (img.height - 1));
+        if (ix < 0 || iy < 0 || ix >= img.width || iy >= img.height) return false;
+        const i = (iy * img.width + ix) * 4, r = data[i], g2 = data[i + 1], b = data[i + 2];
+        return data[i + 3] > 0 && r >= 200 && g2 >= 200 && b >= 200 && Math.max(r, g2, b) - Math.min(r, g2, b) <= 22;
+      };
+      paint(); map.needsUpdate = true; bump.needsUpdate = true;
+    });
+  }
   // color = pengali peta warna → meredupkan huruf (lampu toko menyorot permukaan cukup terang sampai huruf putih silau)
   return new THREE.MeshStandardMaterial({
-    map, color: ink === 'dark' ? 0xffffff : 0xa6a6a6, bumpMap: bump, bumpScale: 3, transparent: true, depthWrite: false,
+    map, color: ink === 'dark' ? 0xffffff : 0xe6e6e6, bumpMap: bump, bumpScale: 3, transparent: true, depthWrite: false,
     // huruf gelap: sepenuhnya matte (kilau lampu menambah terang di atas huruf hitam → tampak abu-abu / cokelat keruh)
     roughness: ink === 'dark' ? 1 : 0.5, metalness: ink === 'dark' ? 0 : 0.15, envMapIntensity: ink === 'dark' ? 0 : 0.2,
   });
@@ -1739,6 +1933,19 @@ function buildPartModel(id, cfg) {
   /* ---------------- BADAN ---------------- */
   if (kind === 'body') {
     const red = std(IC.red, { roughness: 0.5 });
+    // Gangway karet (sama di antara gerbong dan antara loko ↔ gerbong 1): bingkai karet hitam + setengah peredam (bellows)
+    // berlipat; tiap bagian membawa setengahnya, kedua setengah bertemu di tengah celah antar-bagian.
+    const rubber = std(0x18191c, { roughness: 0.85 });
+    const ring = rrShape(0.42, 0.47, 0.07);
+    ring.holes.push(rrShape(0.3, 0.37, 0.05));
+    const ringGeo = new THREE.ExtrudeGeometry(ring, { depth: 0.02, bevelEnabled: false, curveSegments: 5 });
+    ringGeo.rotateY(Math.PI / 2);   // ekstrusi z → x
+    const yG = 0.535;
+    const gangwayHalf = (xe, s) => {
+      add(ringGeo, rubber, s > 0 ? xe : xe - 0.02, yG, 0);
+      add(box(0.07, 0.42, 0.44), rubber, xe + s * 0.055, yG, 0);
+      for (let i = 0; i < 3; i++) fine(add(box(0.008, 0.44, 0.46), std(0x24262a, { roughness: 0.9 }), xe + s * (0.03 + i * 0.022), yG, 0));
+    };
     if (isLoco) {
       // ---- badan merah + hidung baji (profil samping) ----
       const body = new THREE.Mesh(profileGeo(LOCO_PROFILE, 0.66), red);
@@ -1752,6 +1959,7 @@ function buildPartModel(id, cfg) {
       const lampW = std(0xfff6d0, { emissive: 0xffe9a0, emissiveIntensity: 1.2 });
       const lampR = std(0xff3a2a, { emissive: 0xff2010, emissiveIntensity: 0.7 });
       const steelB = std(0xb6bac0, { metalness: 0.55, roughness: 0.35 });
+      const yellowFront = new THREE.MeshBasicMaterial({ color: 0xf0b50a, toneMapped: false });
       // lereng hidung: titik A (ujung) → B (tepi atap); normal keluar (+f, +y)
       const A = [F, NOSE_TIP_Y], sd = [NOSE_TOP_F - F, TOP - NOSE_TIP_Y], slen = Math.hypot(sd[0], sd[1]);
       const sn = [sd[1] / slen, -sd[0] / slen], ang = Math.atan2(sd[1], sd[0]);
@@ -1760,12 +1968,17 @@ function buildPartModel(id, cfg) {
         const [f, y] = at((t0 + t1) / 2, d);
         return add(box((t1 - t0) * slen, thick, w), mat, X(f), y, z, [0, 0, ang]);
       };
+      // panel kuning peringatan di muka depan, di bawah kaca depan (seperti foto referensi Virgin Class 91 / DVT)
+      // (berhenti tepat di tepi bingkai hitam, dan sedikit lebih tinggi dari bingkai → tidak ada permukaan sebidang yang saling tumpang → tidak berkedip/z-fighting)
+      // Material tanpa pencahayaan (Basic, tanpa tone mapping): permukaan lereng ini menghadap lampu toko, sehingga material berlampu
+      // selalu terbakar jadi krem pucat / berubah warna saat hover. Dengan ini kuningnya tetap kuning pekat dari sudut mana pun.
+      onSlope(0.16, 0.5, BS + 0.0052, 0.008, 0.61, yellowFront);
       // bingkai hitam kabin + dua kaca depan + tiang tengah + wiper
-      onSlope(0.2, 1.03, BS + 0.004, 0.008, 0.61, black);
+      onSlope(0.5, 1.03, BS + 0.004, 0.008, 0.61, black);
       for (const sz of [-1, 1]) {
-        onSlope(0.38, 0.95, BS + 0.009, 0.006, 0.262, glass, sz * 0.141);
-        fine(onSlope(0.41, 0.43, BS + 0.013, 0.004, 0.17, black, sz * 0.15));
-        fine(onSlope(0.36, 0.38, BS + 0.012, 0.003, 0.26, std(0x2a2d31), sz * 0.141));   // karet bawah kaca
+        onSlope(0.57, 0.95, BS + 0.009, 0.006, 0.262, glass, sz * 0.141);
+        fine(onSlope(0.6, 0.62, BS + 0.013, 0.004, 0.17, black, sz * 0.15));
+        fine(onSlope(0.55, 0.57, BS + 0.012, 0.003, 0.26, std(0x2a2d31), sz * 0.141));   // karet bawah kaca
       }
       // lampu depan di lereng bawah kaca: panel hitam + lampu sorot putih + lampu ekor merah
       for (const sz of [-1, 1]) {
@@ -1790,6 +2003,8 @@ function buildPartModel(id, cfg) {
         fine(add(box(0.012, 0.03, 0.03), std(0x2a2d31), rx - 0.004, 0.33, sz * 0.05));        // soket jumper
       }
       fine(zAx(cyl(0.005, 0.12, 8), steelB, rx - 0.018, 0.55, 0));
+      // gangway karet ke gerbong 1 (menutupi panel kuning & jendela belakang, seperti sambungan gerbong); xe di luar pegangan
+      gangwayHalf(rx - 0.026, -1);
 
       // pegangan tangan di samping pintu (belakang & kabin), kedua sisi
       const fI = (x) => -L / 2 + ((x - 45) / 1375) * (F + L / 2), yI = (y) => TOP - ((y - 113) / 145) * (TOP - FLOOR);
@@ -1803,25 +2018,20 @@ function buildPartModel(id, cfg) {
     } else {
       // ---- gerbong Mk4: badan bersudut bulat (ujung putih-abu), stiker sisi berlivery InterCity ----
       add(new RoundedBoxGeometry(L, TOP - FLOOR, 0.66, 3, 0.025), std(IC.coachEnd, { roughness: 0.5 }), cx, (TOP + FLOOR) / 2, 0).castShadow = true;
-      const kindS = car === 'car1' ? 'rfm' : 'ts';
+      const kindS = car === 'car1' ? 'ts' : 'rfm';   // tekstur badan gerbong 1 & 2 ditukar: gerbong 1 = 'ts' (jendela penuh), gerbong 2 = 'rfm' (dapur)
       decal(coachSideTexture(kindS, 1), coachSideTexture(kindS, -1), 0, L, (TOP + FLOOR) / 2, TOP - FLOOR);
       // pita marun-tua di dinding ujung (bagian atas), lanjutan pita jendela
       for (const s of [-1, 1]) add(box(0.004, 0.12, 0.6), std(0x3a1d22, { roughness: 0.6 }), X(s * (L / 2 + 0.002)), 0.72, 0);
       // gangway di kedua ujung: bingkai karet hitam; ke gerbong lain → peredam (bellows) berlipat, ujung luar → pintu tertutup
-      const rubber = std(0x18191c, { roughness: 0.85 });
-      const ring = rrShape(0.42, 0.47, 0.07);
-      ring.holes.push(rrShape(0.3, 0.37, 0.05));
-      const ringGeo = new THREE.ExtrudeGeometry(ring, { depth: 0.02, bevelEnabled: false, curveSegments: 5 });
-      ringGeo.rotateY(Math.PI / 2);   // ekstrusi z → x
-      const yG = 0.535;
-      const ends = car === 'car1' ? [[1, false], [-1, true]] : [[1, true], [-1, false]];   // [arah, bersambung ke gerbong lain?]
+      // (rubber / ringGeo / yG / gangwayHalf didefinisikan di atas, dipakai bersama dengan ujung belakang lokomotif)
+      // [arah, bersambung ke bagian lain?]: gerbong 1 bersambung ke loko (+x) dan gerbong 2 (−x); gerbong 2 ujung belakang = pintu tertutup
+      const ends = car === 'car1' ? [[1, true], [-1, true]] : [[1, true], [-1, false]];
       for (const [s, linked] of ends) {
         const xe = X(s * L / 2);
-        add(ringGeo, rubber, s > 0 ? xe : xe - 0.02, yG, 0);
         if (linked) {
-          add(box(0.07, 0.42, 0.44), rubber, xe + s * 0.055, yG, 0);
-          for (let i = 0; i < 3; i++) fine(add(box(0.008, 0.44, 0.46), std(0x24262a, { roughness: 0.9 }), xe + s * (0.03 + i * 0.022), yG, 0));
+          gangwayHalf(xe, s);
         } else {
+          add(ringGeo, rubber, s > 0 ? xe : xe - 0.02, yG, 0);
           add(box(0.008, 0.37, 0.3), std(0x3d4146, { roughness: 0.6 }), xe + s * 0.006, yG, 0);
           add(box(0.01, 0.1, 0.12), std(0x0d0e10, { roughness: 0.3 }), xe + s * 0.008, yG + 0.09, 0);
           if (isTail) for (const sz of [-1, 1]) fine(xAx(cyl(0.02, 0.01, 18), std(0xff3a2a, { emissive: 0xff2010, emissiveIntensity: 0.7 }), xe + s * 0.004, 0.36, sz * 0.23));
@@ -1830,24 +2040,7 @@ function buildPartModel(id, cfg) {
     }
   }
 
-  /* ---------------- TUTUP ATAS BADAN: panel abu-gelap di tengah, bingkai merah di tepi (tempat tulisan terukir) ---------------- */
-  let topY = 0, topFc = 0;   // permukaan panel (y) & pusatnya (f) — dipakai tulisan terukir di bawah
-  if (kind === 'body') {
-    const panelMat = std(0x34383e, { roughness: 0.55, metalness: 0.25, envMapIntensity: 0.3 });
-    if (isLoco) {
-      // atap badan loko sudah merah (puncak profil di TOP + BS): cukup panel gelap yang menyisakan bingkai merah tipis
-      topFc = 0.075;
-      topY = TOP + BS + 0.005;
-      fine(add(rbox(1.35, 0.01, 0.5, 0.004), panelMat, X(topFc), topY, 0));
-    } else {
-      // gerbong: bingkai merah di seluruh tutup (puncak badan di y = TOP), panel gelap di dalamnya
-      const rim = std(0x8a1219, { roughness: 0.5 });
-      fine(add(rbox(L - 0.06, 0.006, 0.61, 0.002), rim, cx, TOP + 0.002, 0));
-      topY = TOP + 0.004 + 0.005;
-      fine(add(rbox(L - 0.17, 0.01, 0.5, 0.004), panelMat, cx, topY, 0));
-    }
-    topY += 0.005;
-  }
+  // (Tutup atas badan sengaja polos: panel abu-gelap & bingkai merah dihapus. Tulisan terukir kini ada di sisi badan, lihat bawah.)
 
   /* ---------------- ATAP ---------------- */
   if (kind === 'roof') {
@@ -1910,7 +2103,8 @@ function buildPartModel(id, cfg) {
       // talang air di kedua tepi
       for (const sz of [-1, 1]) fine(add(box(L - 0.08, 0.008, 0.008), dark, cx, TOP + 0.022, sz * 0.326));
       // unit AC rendah berkisi + ventilasi jamur kecil dekat ujung
-      for (const df of [-0.3, 0.3]) {
+      // (digeser sedikit ke ujung gerbong → blok tulisan terukir di tengah atap punya lebih banyak ruang)
+      for (const df of [-0.37, 0.37]) {
         add(rbox(0.32, 0.035, 0.24, 0.012), grey, X(df), TOP + 0.105, 0);
         for (let i = 0; i < 5; i++) fine(add(box(0.006, 0.006, 0.2), dark, X(df - 0.12 + i * 0.06), TOP + 0.124, 0));
       }
@@ -1921,28 +2115,35 @@ function buildPartModel(id, cfg) {
     }
   }
 
-  // Tulisan terukir langsung di badan kereta (tanpa plat tambahan): atap → di puncak kubah; badan → di area sisi yang polos;
-  // roda → di permukaan atas lantai rangka. Ukuran blok teks (w) menyesuaikan permukaan; kamera 'engrave' menyesuaikan jaraknya.
+  // Tulisan terukir langsung di badan kereta (tanpa plat tambahan): atap → di puncak kubah (atap gelap → huruf terang);
+  // badan → di sisi (+z) pada area yang berlatar putih: loko di dalam lengkung putih livery, gerbong di pita putih-abu bawah
+  // jendela (huruf gelap); roda → di permukaan atas lantai rangka. Ukuran blok teks (w) menyesuaikan permukaan; kamera 'engrave'
+  // menyesuaikan jaraknya, jadi blok boleh kecil.
   if (cfg) {
-    const w = kind === 'body' ? 0.72 : 0.22;
+    const w = (kind === 'body' ? (isLoco ? 0.148 : 0.225) : 0.22) * (ENGRAVE_ASPECT / 1.5);   // tinggi plat tetap seperti semula (aspek lama 1.5), hanya lebih lebar
+    const locoFit = kind === 'body' && isLoco ? { fc: LOCO_PLATE.fc, yc: LOCO_PLATE.yc, w, h: w / ENGRAVE_ASPECT } : null;   // plat loko: teks hanya di area putih livery
     let tilt = 0;
-    const spot = new THREE.Mesh(new THREE.PlaneGeometry(w, w / ENGRAVE_ASPECT), engraveMaterial(cfg, 'light'));
+    const spot = new THREE.Mesh(new THREE.PlaneGeometry(w, w / ENGRAVE_ASPECT), engraveMaterial(cfg, kind === 'body' ? 'dark' : 'light', locoFit));
     if (kind === 'roof') {
       // puncak kubah (di luar pantograf / unit AC): loko di atap depan
       spot.position.set(X(isLoco ? 0.4 : 0), TOP + 0.1 + 0.004, 0);
       spot.rotation.x = -Math.PI / 2;                                                 // menghadap ke atas
       tilt = 0.12;                                                                    // kamera sedikit miring ke arah kartu
     } else if (kind === 'body') {
-      // panel abu-gelap di tutup atas badan
-      spot.position.set(X(topFc), topY, 0);
-      spot.rotation.x = -Math.PI / 2;
-      tilt = 0.12;
+      // koordinat loko: tengah bidang putih terbesar pada gambar livery (px 614,299 dari 2000×624) → f ≈ −0.168, y ≈ 0.556
+      // (diturunkan dari 0.556 → 0.49 & digeser ke kanan mengikuti sapuan pita putih ke kanan-bawah, di mana pita lebih lebar)
+      if (isLoco) spot.position.set(X(LOCO_PLATE.fc), LOCO_PLATE.yc, 0.3375 + 0.03);
+      else spot.position.set(X(-0.15), 0.384, 0.3375 + 0.03);                        // pita putih-abu bawah (y 0.31–0.46)
+      tilt = 0;                                                                       // menghadap ke samping (+z)
     } else {
       spot.position.set(cx, 0.29 + 0.004, 0);                                         // permukaan atas lantai rangka (y 0.29)
       spot.rotation.x = -Math.PI / 2;
       tilt = 0.12;
     }
     spot.castShadow = false; spot.receiveShadow = false;
+    // Dua-duanya transparan: tanpa renderOrder, urutan gambar bergantung jarak pusat objek ke kamera → dari jauh stiker livery
+    // (bidang besar, pusatnya lebih dekat kamera) tergambar SETELAH tulisan dan menutupinya. renderOrder memaksa tulisan di atas.
+    spot.renderOrder = 5;
     spot.userData.isEngrave = true;
     g.add(spot);
     g.userData.engrave = { spot, tilt };
@@ -1982,25 +2183,21 @@ function digitTexture(d) {
   return tx;
 }
 
-function plaqueTexture(cfg) {
+// Panel perkamen kartu bagian: tanpa huruf — hanya perkamen berbintik + satu garis tepi emas tipis
+function cardPanelTexture() {
+  const W = 1330, H = 810;                            // 1 px ≈ 1 mm panel (1.33 × 0.81)
   const c = document.createElement('canvas');
-  c.width = 2048; c.height = 440;
+  c.width = W; c.height = H;
   const g = c.getContext('2d');
-  g.fillStyle = '#f7f0df'; g.fillRect(0, 0, c.width, c.height);
-  g.strokeStyle = '#b08d4a'; g.lineWidth = 10; g.strokeRect(14, 14, c.width - 28, c.height - 28);
-  g.fillStyle = '#3b2a1a';
-  g.font = 'bold 76px Georgia, serif';
-  g.textBaseline = 'top';
-  g.fillText(cfg.name, 60, 46);
-  g.font = '30px Georgia, serif';
-  const words = cfg.text.join(' ').split(' ');
-  let line = '', y = 160;
-  for (const w of words) {
-    const test = line ? line + ' ' + w : w;
-    if (g.measureText(test).width > c.width - 120) { g.fillText(line, 60, y); line = w; y += 40; }
-    else line = test;
+  const bg = g.createRadialGradient(W / 2, H / 2, H * 0.1, W / 2, H / 2, W * 0.62);
+  bg.addColorStop(0, '#f6eed6'); bg.addColorStop(0.7, '#e9dbb4'); bg.addColorStop(1, '#cdb685');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 1400; i++) {
+    g.fillStyle = `rgba(110,80,35,${Math.random() * 0.05})`;
+    g.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 3, 2 + Math.random() * 3);
   }
-  g.fillText(line, 60, y);
+  g.strokeStyle = '#b8923c'; g.lineWidth = 5; g.lineJoin = 'round';
+  g.strokeRect(44, 44, W - 88, H - 88);
   const tx = new THREE.CanvasTexture(c);
   tx.colorSpace = THREE.SRGBColorSpace;
   tx.anisotropy = 8;
